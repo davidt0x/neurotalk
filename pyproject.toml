@@ -30,7 +30,12 @@ classifiers = [
   "Typing :: Typed",
 ]
 dynamic = ["version"]
-dependencies = []
+dependencies = [
+  "aiortc>=1.6,<2",
+  "websockets>=12,<13",
+  "pyaudio>=0.2.11,<1",
+  "numpy>=1.22,<3",
+]
 
 [project.urls]
 Homepage = "https://github.com/davidt0x/neurotalk"
@@ -43,6 +48,7 @@ Changelog = "https://github.com/davidt0x/neurotalk/releases"
 test = [
   "pytest >=6",
   "pytest-cov >=3",
+  "pytest-asyncio >=0.23",
 ]
 dev = [
   { include-group = "test" },
@@ -72,6 +78,9 @@ addopts = ["-ra", "--showlocals", "--strict-markers", "--strict-config"]
 xfail_strict = true
 filterwarnings = [
   "error",
+]
+markers = [
+  "asyncio: mark a test as asyncio-based.",
 ]
 log_cli_level = "INFO"
 testpaths = [

@@ -33,9 +33,9 @@ neurotalk/
 
 ## 4. Current Project Skeleton
 - `pyproject.toml` is Hatch-based with dynamic versioning (`hatch-vcs`), Ruff, Mypy, and pytest already wired in.
-- `noxfile.py` is present for task automation; plan to add sessions for linting, tests, type checks, and docs builds.
-- `src/neurotalk/__init__.py` exposes the version placeholder; no functional modules exist yet.
-- `tests/` and `docs/` directories are scaffolded but empty, ready for first tests and Sphinx documentation.
+- `noxfile.py` is present for task automation; expand it with lint/test/type/doc sessions once the workflow stabilises.
+- Core modules (`config`, `events`, `session`, `signaling`, `sync`, `audio`, `webrtc`) now provide configuration dataclasses, event hooks, microphone/speaker management, a session shell wired to the signaling client, announce/ack start synchronisation, WebRTC offer/answer + ICE helpers, and a bundled WebSocket relay service.
+- `tests/` includes coverage for configuration helpers, signaling broadcast, WebRTC connection bring-up, session lifecycle/control messaging, and the sync handshake; `docs/index.md` summarises the implemented surface.
 - Publishing metadata (README badges, BSD-3 license) is already configured; align new features with this structure.
 
 ## 5. Development Phases
@@ -46,7 +46,7 @@ neurotalk/
 2. **Core Features**
    - Add mute/unmute controls (track-enabled flags).
    - Expose control channel send/receive with typed events and callbacks.
-   - Introduce start-time sync utility (`establish_start_time()` exchanging timestamps over data channel).
+   - Introduce start-time sync utility (announce/ack on signaling channel; later migrate to data channel if needed).
 3. **Recording & Logging**
    - Integrate `MediaRecorder` for WAV capture (mic, remote, mix).
    - Provide logging hooks for connection state, stream stats, control events.
@@ -89,8 +89,10 @@ with Session(config, handlers) as session:
 ```
 
 ## 7. Dependencies & Tooling
+- Maintain support for Python 3.10–3.11 to match PsychoPy constraints.
 - `aiortc` for WebRTC (requires `pyee`, `av`, etc.).
-- Optional `uvicorn`/`websockets` for signaling service.
+- `websockets` powers the bundled signaling client/server; `uvicorn` remains optional if we later expose an ASGI variant.
+- PyAudio is optional for real microphone/speaker capture; when unavailable, NeuroTalk falls back to silent capture and blackhole playback.
 - Environment management and installs via `uv`.
 - Testing: `pytest`, `pytest-asyncio`, and `pytest-timeout`.
 - Code quality: `ruff` (lint + formatting) and `mypy`.
