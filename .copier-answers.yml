@@ -1,0 +1,13 @@
+# Changes here will be overwritten by Copier; NEVER EDIT MANUALLY
+_commit: 2025.10.20
+_src_path: gh:scientific-python/cookie
+backend: hatch
+email: dmturner@princeton.edu
+full_name: David Turner
+license: BSD
+org: davidt0x
+project_name: neurotalk
+project_short_description: NeuroTalk is a WebRTC-powered Python toolkit that delivers
+    synchronized, low-latency audio and control channels for hyperscanning experiments.
+url: https://github.com/davidt0x/neurotalk
+vcs: true
