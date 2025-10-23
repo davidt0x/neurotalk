@@ -5,6 +5,8 @@ import time
 from contextlib import suppress
 from typing import Any, Iterable, Optional
 
+from aiortc import MediaStreamTrack
+
 from .audio import AudioPipeline
 from .config import SessionConfig
 from .events import ControlPayload, EventHandlers, SessionState
@@ -284,6 +286,6 @@ class Session:
             except (asyncio.TimeoutError, asyncio.CancelledError):  # pragma: no cover - best effort
                 pass
 
-    async def _handle_peer_track(self, track) -> None:
+    async def _handle_peer_track(self, track: MediaStreamTrack) -> None:
         if self._audio:
             await self._audio.handle_remote_track(track)
