@@ -13,6 +13,7 @@ from fractions import Fraction
 from typing import Optional, Tuple
 
 from av import AudioFrame
+from av.audio.resampler import AudioResampler
 from aiortc import MediaStreamTrack
 from aiortc.mediastreams import MediaStreamError
 import numpy as np
@@ -245,24 +246,32 @@ class PyAudioPlayer(BaseAudioPlayer):
         except Exception as exc:  # pragma: no cover - hardware failure
             self._pa.terminate()
             raise AudioBackendError(f"Failed to open output device: {exc}") from exc
+        self._target_layout = _layout_for_channels(config.channels)
+        self._resampler = AudioResampler(
+            format="s16",
+            layout=self._target_layout,
+            rate=config.sample_rate,
+        )
 
     async def consume(self, track: MediaStreamTrack) -> None:
         LOGGER.info("Speaker consumer started for track %s", track.id)
         try:
             while True:
                 frame = await track.recv()
-                data = _frame_to_bytes(frame)
-                LOGGER.debug(
-                    "Speaker frame: samples=%s layout=%s sample_rate=%s bytes=%s",
-                    getattr(frame, "samples", "?"),
-                    frame.layout.name if frame.layout else "?",
-                    getattr(frame, "sample_rate", "?"),
-                    len(data),
-                )
-                if self._log_remaining > 0:
-                    LOGGER.debug("Speaker write chunk rms=%.5f", _rms_level(data))
-                    self._log_remaining -= 1
-                await asyncio.to_thread(self._stream.write, data)
+                converted_frames = self._resampler.resample(frame)
+                for converted in converted_frames:
+                    data = _frame_to_bytes(converted)
+                    LOGGER.debug(
+                        "Speaker frame: samples=%s layout=%s sample_rate=%s bytes=%s",
+                        getattr(converted, "samples", "?"),
+                        converted.layout.name if converted.layout else "?",
+                        getattr(converted, "sample_rate", "?"),
+                        len(data),
+                    )
+                    if self._log_remaining > 0:
+                        LOGGER.debug("Speaker write chunk rms=%.5f", _rms_level(data))
+                        self._log_remaining -= 1
+                    await asyncio.to_thread(self._stream.write, data)
         except MediaStreamError:
             LOGGER.info("Speaker consumer ended for track %s", track.id)
             return
