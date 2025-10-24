@@ -14,6 +14,7 @@ from neurotalk import EventHandlers, Session, SessionConfig, SessionState, Signa
 
 
 logging.basicConfig(level=logging.INFO)
+logging.getLogger("aioice").setLevel(logging.WARNING)
 
 
 def _print_state(state: SessionState) -> None:
