@@ -60,8 +60,8 @@ def main() -> None:
     parser.add_argument(
         "--sample-rate",
         type=int,
-        default=48000,
-        help="Sample rate in Hz for both capture and playback (default: 48000).",
+        default=16000,
+        help="Sample rate in Hz for both capture and playback (default: 16000).",
     )
     args = parser.parse_args()
     try:

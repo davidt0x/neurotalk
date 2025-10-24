@@ -31,20 +31,36 @@ def _resolve_device(p: pyaudio.PyAudio, device_spec: str | int | None, is_input:
     raise ValueError(f"Device containing '{name_fragment}' not found")
 
 
-def run_loopback(duration: float, input_device: str | int | None, output_device: str | int | None) -> None:
+def run_loopback(
+    duration: float,
+    sample_rate: int,
+    input_device: str | int | None,
+    output_device: str | int | None,
+) -> None:
     p = pyaudio.PyAudio()
     try:
         input_index = _resolve_device(p, input_device, True)
         output_index = _resolve_device(p, output_device, False)
 
+        if input_index is None:
+            default_in = p.get_default_input_device_info()
+            print(f"Using default input device: {default_in.get('name', 'Unknown')}")
+        else:
+            print(f"Using input device index {input_index}")
+
+        if output_index is None:
+            default_out = p.get_default_output_device_info()
+            print(f"Using default output device: {default_out.get('name', 'Unknown')}")
+        else:
+            print(f"Using output device index {output_index}")
+
         format_ = p.get_format_from_width(2)
         channels = 1 if sys.platform == "darwin" else 2
-        rate = 16000
 
         stream = p.open(
             format=format_,
             channels=channels,
-            rate=rate,
+            rate=sample_rate,
             input=True,
             output=True,
             input_device_index=input_index,
@@ -65,11 +81,12 @@ def run_loopback(duration: float, input_device: str | int | None, output_device:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Loop microphone input back to speakers.")
     parser.add_argument("--duration", type=float, default=5.0, help="Duration in seconds (default: 5)")
+    parser.add_argument("--sample-rate", type=int, default=44100, help="Sample rate for input/output (default: 44100)")
     parser.add_argument("--input", type=str, default=None, help="Input device name fragment or index")
     parser.add_argument("--output", type=str, default=None, help="Output device name fragment or index")
     args = parser.parse_args()
 
-    run_loopback(args.duration, args.input, args.output)
+    run_loopback(args.duration, args.sample_rate, args.input, args.output)
 
 
 if __name__ == "__main__":

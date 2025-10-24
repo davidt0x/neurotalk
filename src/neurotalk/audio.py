@@ -10,7 +10,7 @@ from dataclasses import replace
 import math
 import struct
 from fractions import Fraction
-from typing import Optional
+from typing import Optional, Tuple
 
 from av import AudioFrame
 from aiortc import MediaStreamTrack
@@ -123,7 +123,13 @@ class PyAudioMicrophoneTrack(MediaStreamTrack):
 
         self._pa = pyaudio.PyAudio()
         try:
-            device_index = _resolve_device_index(self._pa, True, config.input_device)
+            device_index, device_name = _resolve_device_index(self._pa, True, config.input_device)
+            LOGGER.info(
+                "Using microphone device: %s (index=%s, sample_rate=%s)",
+                device_name,
+                device_index,
+                config.sample_rate,
+            )
             self._stream = self._pa.open(
                 format=pyaudio.paInt16,
                 channels=self._channels,
@@ -222,7 +228,13 @@ class PyAudioPlayer(BaseAudioPlayer):
         self._pa = pyaudio.PyAudio()
         self._log_remaining = 5
         try:
-            device_index = _resolve_device_index(self._pa, False, config.output_device)
+            device_index, device_name = _resolve_device_index(self._pa, False, config.output_device)
+            LOGGER.info(
+                "Using speaker device: %s (index=%s, sample_rate=%s)",
+                device_name,
+                device_index,
+                config.sample_rate,
+            )
             self._stream = self._pa.open(
                 format=pyaudio.paInt16,
                 channels=config.channels,
@@ -264,24 +276,43 @@ class PyAudioPlayer(BaseAudioPlayer):
             self._pa.terminate()
 
 
-def _resolve_device_index(pa: "pyaudio.PyAudio", is_input: bool, device_spec: str | int | None) -> Optional[int]:
-    if device_spec is None:
-        return None
-    if isinstance(device_spec, int):
-        return device_spec
+def _resolve_device_index(
+    pa: "pyaudio.PyAudio",
+    is_input: bool,
+    device_spec: str | int | None,
+) -> Tuple[Optional[int], str]:
     try:
+        if device_spec is None:
+            info = (
+                pa.get_default_input_device_info()
+                if is_input
+                else pa.get_default_output_device_info()
+            )
+            return info.get("index"), info.get("name", "Default")
+
+        if isinstance(device_spec, int):
+            info = pa.get_device_info_by_index(device_spec)
+            direction_ok = (
+                info.get("maxInputChannels", 0) > 0 if is_input else info.get("maxOutputChannels", 0) > 0
+            )
+            if not direction_ok:
+                raise AudioBackendError(f"Device index {device_spec} is not a valid {'input' if is_input else 'output'} device.")
+            return device_spec, info.get("name", f"Device {device_spec}")
+
+        name_fragment = device_spec.strip('"')
         device_count = pa.get_device_count()
         for index in range(device_count):
             info = pa.get_device_info_by_index(index)
             name = info.get("name", "")
-            if device_spec.lower() in name.lower():
+            if name_fragment.lower() in name.lower():
                 if is_input and info.get("maxInputChannels", 0) > 0:
-                    return index
+                    return index, name
                 if not is_input and info.get("maxOutputChannels", 0) > 0:
-                    return index
-    except Exception:  # pragma: no cover - best effort
-        pass
-    return None
+                    return index, name
+    except OSError as exc:  # pragma: no cover - hardware failure
+        raise AudioBackendError(f"Unable to query PyAudio devices: {exc}") from exc
+
+    raise AudioBackendError(f"Could not resolve {'input' if is_input else 'output'} device '{device_spec}'.")
 
 
 class AudioPipeline:
