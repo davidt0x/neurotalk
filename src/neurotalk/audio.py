@@ -228,6 +228,12 @@ class PyAudioPlayer(BaseAudioPlayer):
             while True:
                 frame = await track.recv()
                 data = frame.planes[0].to_bytes()
+                LOGGER.debug(
+                    "Speaker frame: samples=%s layout=%s bytes=%s",
+                    frame.samples,
+                    frame.layout.name if frame.layout else "?",
+                    len(data),
+                )
                 if self._log_remaining > 0:
                     LOGGER.debug("Speaker write chunk rms=%.5f", _rms_level(data))
                     self._log_remaining -= 1
