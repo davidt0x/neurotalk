@@ -13,7 +13,7 @@ import asyncio
 from neurotalk import EventHandlers, Session, SessionConfig, SessionState, SignalingConfig
 
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 logging.getLogger("aioice").setLevel(logging.WARNING)
 
 
