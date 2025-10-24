@@ -223,6 +223,7 @@ class PyAudioPlayer(BaseAudioPlayer):
             raise AudioBackendError(f"Failed to open output device: {exc}") from exc
 
     async def consume(self, track: MediaStreamTrack) -> None:
+        LOGGER.info("Speaker consumer started for track %s", track.id)
         try:
             while True:
                 frame = await track.recv()
@@ -232,6 +233,7 @@ class PyAudioPlayer(BaseAudioPlayer):
                     self._log_remaining -= 1
                 await asyncio.to_thread(self._stream.write, data)
         except MediaStreamError:
+            LOGGER.info("Speaker consumer ended for track %s", track.id)
             return
 
     async def close(self) -> None:
@@ -318,6 +320,7 @@ class AudioPipeline:
             self._play_task.cancel()
             with suppress(asyncio.CancelledError):
                 await self._play_task
+        LOGGER.debug("Launching playback consumer for track %s", track.id)
         self._play_task = asyncio.create_task(self._player.consume(track))
 
     async def close(self) -> None:
