@@ -6,6 +6,9 @@ import threading
 from contextlib import suppress
 import os
 import platform
+from dataclasses import replace
+import math
+import struct
 from fractions import Fraction
 from typing import Optional
 
@@ -41,6 +44,21 @@ class AudioBackendError(RuntimeError):
 
 def _layout_for_channels(channels: int) -> str:
     return {1: "mono", 2: "stereo"}.get(channels, "stereo")
+
+
+def _rms_level(data: bytes) -> float:
+    if not data:
+        return 0.0
+    count = len(data) // 2
+    if count == 0:
+        return 0.0
+    try:
+        samples = struct.unpack("<%dh" % count, data[: count * 2])
+    except struct.error:  # pragma: no cover - diagnostic helper
+        return 0.0
+    sum_squares = sum(sample * sample for sample in samples)
+    rms = math.sqrt(sum_squares / count)
+    return rms / 32768.0
 
 
 class SilenceAudioTrack(MediaStreamTrack):
@@ -89,6 +107,7 @@ class PyAudioMicrophoneTrack(MediaStreamTrack):
         self._queue: asyncio.Queue[Optional[bytes]] = asyncio.Queue(maxsize=8)
         self._timestamp = 0
         self._closed = asyncio.Event()
+        self._frame_counter = 0
 
         self._pa = pyaudio.PyAudio()
         try:
@@ -116,6 +135,9 @@ class PyAudioMicrophoneTrack(MediaStreamTrack):
                 except Exception:
                     continue
                 self._loop.call_soon_threadsafe(self._queue_put, data)
+                if self._frame_counter % 100 == 0:
+                    LOGGER.debug("Microphone chunk rms=%.5f", _rms_level(data))
+                self._frame_counter += 1
         finally:
             self._loop.call_soon_threadsafe(self._queue_put, None)
 
@@ -186,6 +208,7 @@ class PyAudioPlayer(BaseAudioPlayer):
         self._config = config
         self._loop = asyncio.get_running_loop()
         self._pa = pyaudio.PyAudio()
+        self._log_remaining = 5
         try:
             device_index = _resolve_device_index(self._pa, False, config.output_device)
             self._stream = self._pa.open(
@@ -204,6 +227,9 @@ class PyAudioPlayer(BaseAudioPlayer):
             while True:
                 frame = await track.recv()
                 data = frame.planes[0].to_bytes()
+                if self._log_remaining > 0:
+                    LOGGER.debug("Speaker write chunk rms=%.5f", _rms_level(data))
+                    self._log_remaining -= 1
                 await asyncio.to_thread(self._stream.write, data)
         except MediaStreamError:
             return
@@ -241,7 +267,17 @@ class AudioPipeline:
     """Manage local capture and remote playback."""
 
     def __init__(self, audio_config: AudioDeviceConfig, recording_config: RecordingConfig) -> None:
-        self._audio_config = audio_config
+        input_override = os.getenv("NEUROTALK_INPUT_DEVICE")
+        output_override = os.getenv("NEUROTALK_OUTPUT_DEVICE")
+        config = audio_config
+        if input_override:
+            LOGGER.info("Overriding input device via env: %s", input_override)
+            config = replace(config, input_device=input_override)
+        if output_override:
+            LOGGER.info("Overriding output device via env: %s", output_override)
+            config = replace(config, output_device=output_override)
+
+        self._audio_config = config
         self._recording_config = recording_config
         self._capture: Optional[MediaStreamTrack] = None
         self._player: BaseAudioPlayer = NullAudioPlayer()
