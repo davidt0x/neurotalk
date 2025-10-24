@@ -9,10 +9,15 @@ Both sides should hear each other once the transport reports READY.
 
 from __future__ import annotations
 
+
+import logging
 import argparse
 import asyncio
 
 from neurotalk import EventHandlers, Session, SessionConfig, SessionState, SignalingConfig
+
+
+logging.basicConfig(level=logging.INFO)
 
 
 def _print_state(state: SessionState) -> None:

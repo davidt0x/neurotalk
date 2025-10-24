@@ -6,10 +6,14 @@ Both participants should be able to hear one another once READY is printed.
 
 from __future__ import annotations
 
+import logging
 import argparse
 import asyncio
 
 from neurotalk import EventHandlers, Session, SessionConfig, SessionState, SignalingConfig
+
+
+logging.basicConfig(level=logging.INFO)
 
 
 def _print_state(state: SessionState) -> None:
