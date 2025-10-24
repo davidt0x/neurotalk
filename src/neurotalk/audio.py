@@ -15,6 +15,7 @@ from typing import Optional
 from av import AudioFrame
 from aiortc import MediaStreamTrack
 from aiortc.mediastreams import MediaStreamError
+import numpy as np
 
 from .config import AudioDeviceConfig, RecordingConfig
 
@@ -59,6 +60,17 @@ def _rms_level(data: bytes) -> float:
     sum_squares = sum(sample * sample for sample in samples)
     rms = math.sqrt(sum_squares / count)
     return rms / 32768.0
+
+
+def _frame_to_bytes(frame: AudioFrame) -> bytes:
+    array = frame.to_ndarray()
+    if array.ndim == 2:
+        array = array.T.reshape(-1)
+    else:
+        array = array.reshape(-1)
+    if array.dtype != np.int16:
+        array = array.astype(np.int16)
+    return array.tobytes()
 
 
 class SilenceAudioTrack(MediaStreamTrack):
@@ -227,10 +239,10 @@ class PyAudioPlayer(BaseAudioPlayer):
         try:
             while True:
                 frame = await track.recv()
-                data = frame.planes[0].to_bytes()
+                data = _frame_to_bytes(frame)
                 LOGGER.debug(
                     "Speaker frame: samples=%s layout=%s bytes=%s",
-                    frame.samples,
+                    getattr(frame, "samples", "?"),
                     frame.layout.name if frame.layout else "?",
                     len(data),
                 )
