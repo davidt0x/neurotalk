@@ -10,7 +10,14 @@ import logging
 import argparse
 import asyncio
 
-from neurotalk import EventHandlers, Session, SessionConfig, SessionState, SignalingConfig
+from neurotalk import (
+    AudioDeviceConfig,
+    EventHandlers,
+    Session,
+    SessionConfig,
+    SessionState,
+    SignalingConfig,
+)
 
 
 logging.basicConfig(level=logging.DEBUG)
@@ -27,6 +34,7 @@ async def _async_main(args: argparse.Namespace) -> None:
     config = SessionConfig(
         peer_id=args.peer_id,
         signaling=SignalingConfig(url=args.signaling_url, room=args.room),
+        audio=AudioDeviceConfig(sample_rate=args.sample_rate),
         initiator=False,
     )
     handlers = EventHandlers(on_state_change=_print_state)
@@ -48,6 +56,12 @@ def main() -> None:
         "--signaling-url",
         default="ws://127.0.0.1:8765",
         help="URL of the signaling server (default: ws://127.0.0.1:8765).",
+    )
+    parser.add_argument(
+        "--sample-rate",
+        type=int,
+        default=48000,
+        help="Sample rate in Hz for both capture and playback (default: 48000).",
     )
     args = parser.parse_args()
     try:

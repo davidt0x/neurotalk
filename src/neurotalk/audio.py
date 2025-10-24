@@ -241,9 +241,10 @@ class PyAudioPlayer(BaseAudioPlayer):
                 frame = await track.recv()
                 data = _frame_to_bytes(frame)
                 LOGGER.debug(
-                    "Speaker frame: samples=%s layout=%s bytes=%s",
+                    "Speaker frame: samples=%s layout=%s sample_rate=%s bytes=%s",
                     getattr(frame, "samples", "?"),
                     frame.layout.name if frame.layout else "?",
+                    getattr(frame, "sample_rate", "?"),
                     len(data),
                 )
                 if self._log_remaining > 0:
