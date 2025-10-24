@@ -247,13 +247,14 @@ class AudioPipeline:
         self._player: BaseAudioPlayer = NullAudioPlayer()
         self._play_task: Optional[asyncio.Task[None]] = None
 
+        LOGGER.debug("AudioPipeline init: HAS_PYAUDIO=%s", HAS_PYAUDIO)
         self._capture = self._create_capture()
         self._player = self._create_player()
 
     def _create_capture(self) -> MediaStreamTrack:
         if HAS_PYAUDIO:
             try:
-                LOGGER.debug("Initialising PyAudio microphone track.")
+                LOGGER.info("Creating PyAudio microphone track (device=%s)", self._audio_config.input_device)
                 return PyAudioMicrophoneTrack(self._audio_config)
             except AudioBackendError as exc:  # pragma: no cover - best effort
                 LOGGER.warning("Microphone initialisation failed: %s. Falling back to silence.", exc)
@@ -262,7 +263,7 @@ class AudioPipeline:
     def _create_player(self) -> BaseAudioPlayer:
         if HAS_PYAUDIO:
             try:
-                LOGGER.debug("Initialising PyAudio speaker.")
+                LOGGER.info("Creating PyAudio speaker (device=%s)", self._audio_config.output_device)
                 return PyAudioPlayer(self._audio_config)
             except AudioBackendError as exc:  # pragma: no cover - best effort
                 LOGGER.warning("Speaker initialisation failed: %s. Disabling playback.", exc)
@@ -276,6 +277,7 @@ class AudioPipeline:
     async def handle_remote_track(self, track: MediaStreamTrack) -> None:
         if track.kind != "audio":
             return
+        LOGGER.info("Received remote audio track: %s", track.id)
         if self._play_task:
             self._play_task.cancel()
             with suppress(asyncio.CancelledError):
