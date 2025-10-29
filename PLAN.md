@@ -108,6 +108,14 @@
 - `logging.py` (or `records.py`): helpers for writing timing logs/CSV outputs and computing buffer statistics.
 - `legacy/` or `examples/`: scripts that demonstrate how to drive the new API from PsychoPy-based experiments, keeping `CONV_scan.py` untouched for reference.
 
+### Scaffolding Status
+- `src/neurotalk/config.py` defines `NetworkConfig`, `AudioConfig`, `RecordingConfig`, and `SessionConfig`.
+- `src/neurotalk/control.py` formalizes the control payload vocabulary with typed helpers.
+- `src/neurotalk/network.py` wraps socket creation, STUN diagnostics, and hole punching.
+- `src/neurotalk/audio.py` introduces placeholder workers/recorders for future PyAudio integration.
+- `src/neurotalk/session.py` provides the `ConversationSession` orchestrator skeleton and control polling loop.
+- `src/neurotalk/records.py` sketches recording manifests, segment markers, and telemetry hooks.
+
 ### Control Message Vocabulary
 - `HANDSHAKE_HELLO` (`b"hello!"`): passive-side response on all three sockets to capture the caller’s public IP/port tuple during hole punching.
 - `HANDSHAKE_HI_PARTNER` (`b"hi partner"`): active-side probe looped until echoed back, proving bi-directional reachability through NAT.
