@@ -53,6 +53,7 @@
    - Add unit tests for packet serialization, port setup, and sync math.
      - Basic coverage now in `tests/test_control.py`, `tests/test_network.py`, and `tests/test_session_core.py`.
    - Create an integration harness that mimics two peers exchanging audio locally (loopback) to validate the new API.
+   - Unit-tests for audio workers (using mocked PyAudio streams) live in `tests/test_audio.py`.
    - Document manual test steps for running alongside `CONV_scan.py`.
 
 8. **Documentation & Examples**
@@ -114,7 +115,7 @@
 - `src/neurotalk/config.py` defines `NetworkConfig`, `AudioConfig`, `RecordingConfig`, and `SessionConfig`.
 - `src/neurotalk/control.py` formalizes the control payload vocabulary with typed helpers.
 - `src/neurotalk/network.py` wraps socket creation, STUN diagnostics, and hole punching.
-- `src/neurotalk/audio.py` introduces placeholder workers/recorders for future PyAudio integration.
+- `src/neurotalk/audio.py` implements thread-based PyAudio-backed input/output workers with injectable stream factories.
 - `src/neurotalk/session.py` provides the `ConversationSession` orchestrator skeleton and control polling loop.
 - `src/neurotalk/records.py` sketches recording manifests, segment markers, and telemetry hooks.
 
