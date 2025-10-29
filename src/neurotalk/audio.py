@@ -16,6 +16,7 @@ import logging
 from typing import Callable, Optional, Protocol
 
 from .config import AudioConfig
+from .records import Recorder
 
 try:
     import pyaudio  # type: ignore

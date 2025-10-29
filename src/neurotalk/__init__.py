@@ -14,7 +14,7 @@ from .control import (
     classify_payload,
 )
 from .network import NetworkError, flush_pending
-from .records import RecordingManifest, SegmentMarker, TelemetryReporter
+from .records import RecordingManifest, RecorderTarget, SegmentMarker, TelemetryReporter, WavRecorder
 from .session import ConversationSession
 
 __all__ = [
@@ -27,9 +27,11 @@ __all__ = [
     "TurnPassPayload",
     "classify_payload",
     "NetworkError",
+    "RecorderTarget",
     "RecordingManifest",
     "SegmentMarker",
     "TelemetryReporter",
+    "WavRecorder",
     "ConversationSession",
     "flush_pending",
 ]
