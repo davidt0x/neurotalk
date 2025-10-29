@@ -13,7 +13,7 @@ from .control import (
     TurnPassPayload,
     classify_payload,
 )
-from .network import NetworkError
+from .network import NetworkError, flush_pending
 from .records import RecordingManifest, SegmentMarker, TelemetryReporter
 from .session import ConversationSession
 
@@ -31,4 +31,5 @@ __all__ = [
     "SegmentMarker",
     "TelemetryReporter",
     "ConversationSession",
+    "flush_pending",
 ]

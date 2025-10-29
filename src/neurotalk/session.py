@@ -82,7 +82,10 @@ class ConversationSession:
             run_stun_diagnostics(net_cfg.stun_servers)
 
         remote = hole_punch(bundle, net_cfg)
+        from .network import flush_pending
+
         configure_nonblocking(bundle)
+        flush_pending(bundle)
         self.state.sockets = bundle
         self._start_control_loop()
         # TODO: initialize audio workers

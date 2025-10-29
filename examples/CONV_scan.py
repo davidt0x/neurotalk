@@ -875,7 +875,7 @@ def goGo(NAT, STUN, LOGTTL, PARTICIPANT, RUN):
         a = read_df['Text'].loc[read_df['Item'] == idx + 1]
         b = []
         [b.append(x) for x in a]
-        read_turns.append(b)1
+        read_turns.append(b)
 
     ## -- start visual part of the experiment --
 

@@ -14,6 +14,7 @@
 ## Assumptions & Constraints
 - Target Python 3.10+ (dropping Python 3.7/legacy shims); ensure legacy script keeps any compatibility tweaks it still needs.
 - PyAudio and multiprocessing remain the audio/parallelism stack; no new third-party deps unless essential.
+- Prefer thread-based workers over multiprocessing for audio/control loops to simplify state sharing across platforms (spawn vs. fork).
 - CLI tooling via `uv` when running scripts/tests (per user instructions).
 - Aim for incremental pull-up: introduce modules, copy/adapt code, then wire higher-level façade.
 - Library must not depend on PsychoPy; integration points should be optional helpers or documented patterns.
@@ -50,6 +51,7 @@
 
 7. **Testing & Validation**
    - Add unit tests for packet serialization, port setup, and sync math.
+     - Basic coverage now in `tests/test_control.py`, `tests/test_network.py`, and `tests/test_session_core.py`.
    - Create an integration harness that mimics two peers exchanging audio locally (loopback) to validate the new API.
    - Document manual test steps for running alongside `CONV_scan.py`.
 

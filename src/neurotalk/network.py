@@ -14,11 +14,7 @@ from dataclasses import dataclass
 from typing import Iterable, Optional, Tuple
 
 from .config import NetworkConfig
-from .control import (
-    HANDSHAKE_HELLO,
-    HANDSHAKE_HI_PARTNER,
-    HANDSHAKE_READY,
-)
+from .control import HANDSHAKE_HELLO, HANDSHAKE_HI_PARTNER, HANDSHAKE_READY
 
 
 class NetworkError(RuntimeError):
@@ -113,6 +109,7 @@ def hole_punch(bundle: SocketBundle, config: NetworkConfig) -> Tuple[str, int, i
     if role == 0:
         # Passive role waits for incoming hello packets.
         start = time.monotonic()
+        handshake_token = None
         while time.monotonic() - start < timeout:
             try:
                 incoming_in, addr_in = bundle.inbound.recvfrom(1024)
@@ -120,15 +117,14 @@ def hole_punch(bundle: SocketBundle, config: NetworkConfig) -> Tuple[str, int, i
                 incoming_ctrl, addr_ctrl = bundle.control.recvfrom(1024)
             except socket.timeout:
                 continue
-            if (
-                incoming_in == HANDSHAKE_HELLO
-                and incoming_out == HANDSHAKE_HELLO
-                and incoming_ctrl == HANDSHAKE_HELLO
+            if incoming_in in (HANDSHAKE_HELLO, HANDSHAKE_HI_PARTNER) and (
+                incoming_out == incoming_in and incoming_ctrl == incoming_in
             ):
                 remote_ip = addr_in[0]
                 port_out = addr_in[1]
                 port_in = addr_out[1]
                 port_comm = addr_ctrl[1]
+                handshake_token = incoming_in
                 break
         else:
             raise NetworkError("Timed out waiting for handshake initiation")
@@ -136,12 +132,12 @@ def hole_punch(bundle: SocketBundle, config: NetworkConfig) -> Tuple[str, int, i
         # Confirm by echoing back.
         start = time.monotonic()
         while time.monotonic() - start < timeout:
-            bundle.inbound.sendto(HANDSHAKE_HELLO, (remote_ip, port_out))
-            bundle.outbound.sendto(HANDSHAKE_HELLO, (remote_ip, port_in))
-            bundle.control.sendto(HANDSHAKE_HELLO, (remote_ip, port_comm))
+            bundle.inbound.sendto(handshake_token, (remote_ip, port_out))
+            bundle.outbound.sendto(handshake_token, (remote_ip, port_in))
+            bundle.control.sendto(handshake_token, (remote_ip, port_comm))
             try:
                 incoming_ctrl, addr_ctrl = bundle.control.recvfrom(1024)
-                if incoming_ctrl == HANDSHAKE_HELLO and addr_ctrl[0] == remote_ip:
+                if addr_ctrl[0] == remote_ip and incoming_ctrl in (handshake_token, HANDSHAKE_READY):
                     break
             except socket.timeout:
                 continue
@@ -156,10 +152,18 @@ def hole_punch(bundle: SocketBundle, config: NetworkConfig) -> Tuple[str, int, i
             bundle.outbound.sendto(HANDSHAKE_HI_PARTNER, (remote_ip, port_in))
             bundle.control.sendto(HANDSHAKE_HI_PARTNER, (remote_ip, port_comm))
             try:
+                incoming_in, addr_in = bundle.inbound.recvfrom(1024)
+                incoming_out, addr_out = bundle.outbound.recvfrom(1024)
                 incoming_ctrl, addr_ctrl = bundle.control.recvfrom(1024)
             except socket.timeout:
                 continue
-            if incoming_ctrl == HANDSHAKE_HI_PARTNER and addr_ctrl[0] == remote_ip:
+            if incoming_in in (HANDSHAKE_HI_PARTNER, HANDSHAKE_HELLO) and (
+                incoming_out == incoming_in and incoming_ctrl == incoming_in
+            ):
+                remote_ip = addr_ctrl[0]
+                port_out = addr_in[1]
+                port_in = addr_out[1]
+                port_comm = addr_ctrl[1]
                 break
         else:
             raise NetworkError("Handshake probes were not acknowledged")
@@ -182,3 +186,20 @@ def configure_nonblocking(bundle: SocketBundle, *, recv_timeout: float = 0.1) ->
     bundle.outbound.settimeout(0.0)  # non-blocking send
     bundle.inbound.settimeout(recv_timeout)
     bundle.control.settimeout(recv_timeout)
+
+
+def flush_pending(bundle: SocketBundle, duration: float = 1.0) -> None:
+    """
+    Drain any datagrams left in the buffers after the handshake phase.
+    """
+
+    deadline = time.monotonic() + duration
+    sockets = (bundle.inbound, bundle.outbound, bundle.control)
+    while time.monotonic() < deadline:
+        for sock in sockets:
+            try:
+                sock.recv(1024)
+            except socket.timeout:
+                continue
+            except BlockingIOError:
+                continue
