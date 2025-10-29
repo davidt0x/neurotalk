@@ -5,17 +5,12 @@ from psychopy import visual, core, data, event, logging, monitors
 # ---------- config ----------
 SCANNER       = None
 WIN_SIZE      = (1280, 800)
-FULLSCR       = True
-LETTER_H      = 0.05
-WRAP_W        = 1.5
+FULLSCR       = False
+LETTER_H      = 0.07
+WRAP_W        = 2
 
-BETWEEN_TRIAL_S = 10.0   # break between segments (used for pre- and post-opinion blanks)
-INTRO_S         = 2.0   # intro dwell before communication
+INTRO_S         = 2.0    # intro dwell before communication
 COMM_S          = 30.0   # communication phase duration (s)
-OPINION_S       = 15.0   # opinion phase duration (s)
-
-OPINION_PROMPT = "Please share your opinion on the problem area you just discussed:"
-KEY_SUBMIT     = None  # set to a key string if you later want opinion submit
 
 KEY_PASS    = '1'
 KEY_QUIT    = 'escape'
@@ -39,6 +34,13 @@ def decode_pid(pid_str: str):
     role = 'A' if person == 1 else 'B'
     return dyad, role
 
+def canonical_topic(t: str) -> str:
+    m = {
+        "air": "Air pollution",
+        "tuition": "Cost of tuition",
+    }
+    return m.get((t or "").strip().lower(), (t or "").strip())
+
 def slug(x: str):
     x = (x or "").strip().lower()
     x = re.sub(r"\s+", "_", x)
@@ -61,11 +63,9 @@ def load_assignment_row(csv_path: str, pid: str):
 
     # Detect delimiter to guard against ';' exports
     with open(csv_path, 'r', encoding='utf-8', newline='') as fpeek:
-        sample = fpeek.read(4096)
-        fpeek.seek(0)
+        sample = fpeek.read(4096); fpeek.seek(0)
         try:
-            sniff = csv.Sniffer().sniff(sample)
-            delimiter = sniff.delimiter
+            sniff = csv.Sniffer().sniff(sample); delimiter = sniff.delimiter
         except Exception:
             delimiter = ','  # fallback
 
@@ -77,14 +77,12 @@ def load_assignment_row(csv_path: str, pid: str):
             "first_topic","second_topic"
         }
         cols = set(rdr.fieldnames or [])
-        # Quick debug print so you can see what’s actually in the file
         print(f"[CSV DEBUG] Reading: {abs_path}")
         print(f"[CSV DEBUG] Detected delimiter: {repr(delimiter)}")
         print(f"[CSV DEBUG] Columns found: {sorted(cols)}")
 
         missing = need - cols
         if missing:
-            # Try to spot “almost matches” (e.g., spacing/case variants) to help debugging
             suggestions = {}
             lowmap = {c.lower().strip(): c for c in cols}
             for want in need:
@@ -100,8 +98,6 @@ def load_assignment_row(csv_path: str, pid: str):
         found_row = None
         for row in rdr:
             rid = (row.get("participant_id") or "").strip()
-            # Debug each row’s participant_id to catch padding issues
-            # print(f"[CSV DEBUG] Saw participant_id value: {repr(rid)}")
             if rid == pid:
                 found_row = {
                     "participant_id": pid,
@@ -123,9 +119,8 @@ def load_assignment_row(csv_path: str, pid: str):
 
         return found_row
 
-
 def pick_first_speaker(starters: dict, session: int):
-    key = f"Neutral_session_{session}"      # session type fixed to 'couple'
+    key = f"Neutral_session_{session}"      # session type fixed to 'neutral'
     val = starters.get(key, "")
     if val not in ("A","B"):
         raise ValueError(f"Starter value for {key} must be 'A' or 'B', got: {val!r}")
@@ -141,10 +136,10 @@ def make_monitor(scanner):
     return mon
 
 def log_ttl(fTTL, exp_condition, role_label, segment, run_clock, comm_clock,
-            conflict_text, first_speaker, role, session, dyad):
+            conflict_text, first_speaker, role, session, dyad,SESSION_TYPE):
     # TTL file remains verbose
     fTTL.write(
-        f"{dyad},{session},{exp_condition},{role_label},{segment},"
+        f"{dyad},{session},{SESSION_TYPE},{exp_condition},{role_label},{segment},"
         f"{time.time()},{run_clock.getTime()},{'' if comm_clock is None else comm_clock.getTime()},"
         f"{conflict_text},{first_speaker},{role}\n"
     ); fTTL.flush()
@@ -155,8 +150,8 @@ def log_comm_press(thisExp, *, event_name, role_label, run_clock, comm_clock,
     thisExp.addData('dyad', dyad)
     thisExp.addData('session', session)
     thisExp.addData('exp_condition', exp_condition)
-    thisExp.addData('event', event_name)                 # e.g., 'trigger_start_ttl', 'intro_start', 'communication_start', 'pass_press', ...
-    thisExp.addData('role', role_label or '')            # 'speaker'/'listener' (presses) or '' (phase events)
+    thisExp.addData('event', event_name)                 # 'trigger_start_ttl', 'communication_start', 'pass_press', ...
+    thisExp.addData('role', role_label or '')            # 'speaker'/'listener' or ''
     thisExp.addData('onset_run_s', run_clock.getTime())  # secs since trigger
     thisExp.addData('conflict_text', conflict_text)
     thisExp.addData('first_speaker', first_speaker)
@@ -174,71 +169,58 @@ def main(pid: str, session: int, csv_path: str):
     # Lookup from CSV (authoritative)
     row = load_assignment_row(csv_path, pid)
     exp_condition = row["condition"]
-    
-    if session == 1:
-        discussion_topic = row.get("first_topic", "")
-    else:
-        discussion_topic = row.get("second_topic", "")
 
-    discussion_topic = (discussion_topic or "").strip()
+    # Topic by session
+    discussion_topic = (row.get("first_topic") if session == 1 else row.get("second_topic")) or ""
+    discussion_topic = discussion_topic.strip()
     if not discussion_topic:
         which = "first_topic" if session == 1 else "second_topic"
         raise ValueError(
             f"No discussion topic found in CSV for participant {pid} session {session} "
             f"(expected column '{which}' to be non-empty)."
         )
-
     conflict_text = discussion_topic
+    display_topic = canonical_topic(conflict_text)
 
-    # --- neutral/controversial instructions (verbatim from prior study) ---
+    # Instruction text by condition (neutral charity framing)
     persuade_instr_text = (
-        "Next, you will discuss with the other participant how the charity money "
-        "should be allocated."
-        "\n\nIMPORTANT: During this conversation, try to PERSUADE "
-        "the other person of your opinion. "
-        "\n\nWe are studying how persuasion works in the brain," 
-        "\n\n so please try to convince the other person of your opinion as much as possible"
-        "\n\n and get them to understand your perspective."
-        "\n\nThese instructions are only for you."
-        "\n\n So, please don't share them with the other participant."
-        "\n\nYou will have 10 minutes for this conversation. "
-        "\n\n A timer will show you how many seconds are left. "
-        "\n\nTell the experimenter when you are ready to begin."
+        "Next, you and your partner will discuss how the charity funds should be allocated.\n"
+        f"You'll focus on how to address: {display_topic}.\n\n\n"
+        "IMPORTANT: During this conversation, try to PERSUADE the other person of your opinion.\n"
+        "We are studying how persuasion works in the brain, so please try to convince the other \n"
+        "person of your opinion as much as possible and get them to understand your perspective.\n"
+        "These instructions are only for you. So, please don't share them with your partner.\n\n\n"
+        "You will have 10 minutes for this conversation. \n"
+        "A timer will show you how many seconds are left.\n\n\n"
+        "Tell the experimenter when you are ready to begin.\n"
+        "You’ll first see a fixation cross for 10 seconds.\n"
+        "After that, you will see instructions to begin the conversation."
     )
-
     compromise_instr_text = (
-        "Next, you will discuss with the other participant how the charity money "
-        "should be allocated."
-        "\n\nIMPORTANT: During this conversation, try to find a "
-        "JOINT SOLUTION that you both agree on. "
-        "\n\nWe are studying how collaboration works in the brain,"
-        "\n\nso please try to reconcile any differences of opinion as much as possible"
-        "\n\nand look for a shared perspective."
-        "\n\nThese instructions are only for you."
-        "\n\n So, please don't share them with the other participant."
-        "\n\nYou will have 10 minutes for this conversation. "
-        "\n\nA timer will show you how many seconds are left. "
-        "\n\nTell the experimenter when you are ready to begin."
+        "Next, you and your partner will discuss how the charity funds should be allocated.\n"
+        f"You'll focus on how to address: {display_topic}.\n\n\n"
+        "IMPORTANT: During this conversation, try to find a JOINT SOLUTION that you both agree on.\n"
+        "We are studying how collaboration works in the brain, so please try to reconcile any \n"
+        "differences of opinion as much as possible and look for a shared perspective.\n"
+        "These instructions are only for you. So, please don't share them with your partner.\n\n\n"
+        "You will have 10 minutes for this conversation. \n"
+        "A timer will show you how many seconds are left.\n\n\n"
+        "Tell the experimenter when you are ready to begin.\n"
+        "You’ll first see a fixation cross for 10 seconds.\n"
+        "After that, you will see instructions to begin the conversation."
     )
 
-    # Pick which instruction to show, based on CSV condition
     cond_lower = (exp_condition or "").strip().lower()
-    if cond_lower.startswith("persu"):   # e.g., 'persuade'/'persuasion'
-        conv_instr_text = persuade_instr_text
-    elif cond_lower.startswith("compr"):  # e.g., 'compromise'/'collaboration'
-        conv_instr_text = compromise_instr_text
-    else:
-        # Fallback: default to compromise if condition is unknown
-        conv_instr_text = compromise_instr_text
+    conv_instr_text = persuade_instr_text if cond_lower.startswith("persu") else (
+        compromise_instr_text if cond_lower.startswith("compr") else compromise_instr_text
+    )
 
-    
     starters = {
         "Neutral_session_1": row["Neutral_session_1"],
         "Couple_session_1":  row["Couple_session_1"],
         "Neutral_session_2": row["Neutral_session_2"],
         "Couple_session_2":  row["Couple_session_2"],
     }
-
     first_speaker = pick_first_speaker(starters, session)  # 'A' or 'B'
 
     # --- data files ---
@@ -258,12 +240,12 @@ def main(pid: str, session: int, csv_path: str):
     # --- TimingsLog (minimal) ---
     timings_path = os.path.join("data", f"{base}_CONV_TimingsLog_{date_str}.csv")
     fLog = open(timings_path, "w", newline="", encoding="utf-8")
-    fLog.write("dyad,session,exp_condition,role,time.time,run.time,comm.time,conflict_text,first_speaker,participant_role\n"); fLog.flush()
+    fLog.write("dyad,session,session_type,exp_condition,role,time.time,run.time,comm.time,conflict_text,first_speaker,participant_role\n"); fLog.flush()
 
     # --- TTL timestamps file (verbose) ---
     ttl_path = os.path.join("data", f"{base}_CONV_TTLtimestamps_{date_str}.csv")
     fTTL = open(ttl_path, "w", newline="", encoding="utf-8")
-    fTTL.write("dyad,session,exp_condition,role,segment,time.time,run.time,comm.time,conflict_text,first_speaker,participant_role\n"); fTTL.flush()
+    fTTL.write("dyad,session,session_type,exp_condition,role,segment,time.time,run.time,comm.time,conflict_text,first_speaker,participant_role\n"); fTTL.flush()
 
     # --- window & text objects ---
     mon = make_monitor(SCANNER)
@@ -272,24 +254,16 @@ def main(pid: str, session: int, csv_path: str):
     txt = lambda **kw: visual.TextStim(win, height=LETTER_H, wrapWidth=WRAP_W, color='white', **kw)
 
     show_instructions = txt(text="")
-    show_prompt       = txt(text="", pos=(0, 0.25))
     show_role_txt     = txt(text="", pos=(0, 0.65))
     show_pass         = txt(text="", pos=(0, 0.05))
     show_timer        = txt(text="", pos=(0, -0.70))
     show_blank        = txt(text="+", pos=(0, 0.00))
-    show_opinion      = txt(text="", pos=(0, 0.25))
     show_topic        = txt(text="", pos=(0, 0.35))
     show_end          = txt(text="You are now done with this task.")
 
-    # --- Single combined INSTRUCTIONS + wait-for-TTL screen (start only on '=') ---
-    combined_instr = (
-        f"{conv_instr_text}\n\n"
-        "Waiting for scanner trigger (=) to start...\n"
-    )
-    
-    # Ensure convo UI is hidden here
-    show_role_txt.setText("")
-    show_pass.setText("")
+    # --- INSTRUCTIONS + TTL wait ---
+    combined_instr = f"{conv_instr_text}"
+    show_role_txt.setText(""); show_pass.setText("")
     event.clearEvents(eventType='keyboard')
 
     show_instructions.setText(combined_instr)
@@ -308,70 +282,57 @@ def main(pid: str, session: int, csv_path: str):
     run_clock = core.Clock()
 
     # TimingsLog + TTL + main CSV: trigger start
-    fLog.write(f"{dyad},{session},{exp_condition},trigger_start_{trigger_source},{time.time()},{run_clock.getTime()},,"
+    fLog.write(f"{dyad},{session},{SESSION_TYPE},{exp_condition},trigger_start_{trigger_source},{time.time()},{run_clock.getTime()},,"
                f"{conflict_text},{first_speaker},{role}\n"); fLog.flush()
     log_ttl(fTTL, exp_condition, '', f"trigger_start_{trigger_source}", run_clock, None,
-            conflict_text, first_speaker, role, session, dyad)
+            conflict_text, first_speaker, role, session, dyad, SESSION_TYPE)
     log_comm_press(thisExp, event_name=f"trigger_start_{trigger_source}", role_label='',
                    run_clock=run_clock, comm_clock=None,
                    dyad=dyad, session=session, exp_condition=exp_condition,
                    conflict_text=conflict_text, first_speaker=first_speaker, participant_role=role)
 
-    # --- brief blank BEFORE intro (legacy structure) ---
+    # --- brief blank BEFORE intro ---
     show_blank.draw(); win.flip()
     blank_clock = core.Clock()
-    while blank_clock.getTime() < 1.0:  # short settle; keep 1s so INTRO_S is the main dwell
+    while blank_clock.getTime() < 1.0:
         keys = event.getKeys([TTL_KEY, KEY_QUIT])
         if keys:
             if KEY_QUIT in keys: win.close(); core.quit()
             if TTL_KEY in keys:
                 log_ttl(fTTL, exp_condition, '', 'blank', run_clock, None,
-                        conflict_text, first_speaker, role, session, dyad)
+                        conflict_text, first_speaker, role, session, dyad, SESSION_TYPE)
                 event.clearEvents(eventType='keyboard')
         core.wait(0.01)
 
-    # ---------------------------
-    # Intro dwell (like legacy)
-    # ---------------------------
-    # --- Optional: intro fixation dwell (no second instruction screen) ---
+    # --- Intro dwell (optional fixation) ---
     if INTRO_S > 0:
         show_blank.draw(); win.flip()
         intro_clock = core.Clock()
-
-
-
         while intro_clock.getTime() < INTRO_S:
             keys = event.getKeys([TTL_KEY, KEY_QUIT])
             if keys:
-                if KEY_QUIT in keys:
-                    win.close(); core.quit()
+                if KEY_QUIT in keys: win.close(); core.quit()
                 if TTL_KEY in keys:
                     log_ttl(fTTL, exp_condition, '', 'intro_fixation', run_clock, None,
-                            conflict_text, first_speaker, role, session, dyad)
+                            conflict_text, first_speaker, role, session, dyad,SESSION_TYPE)
                     event.clearEvents(eventType='keyboard')
             core.wait(0.01)
 
-
     # ---------------------------
-    # Communication phase
+    # Communication phase ONLY
     # ---------------------------
-    
-    # Add this line to mirror the couple script's marker in the TimingsLog:
     fLog.write(
-        f"{dyad},{session},{exp_condition},Communication_start,"
+        f"{dyad},{session},{SESSION_TYPE},{exp_condition},Communication_start,"
         f"{time.time()},{run_clock.getTime()},,"
         f"{conflict_text},{first_speaker},{role}\n"
-    )
-    fLog.flush()
-    
+    ); fLog.flush()
+
     role_text = "YOUR TURN TO SPEAK" if (role == first_speaker) else "YOUR TURN TO LISTEN"
     pass_text = "Press '1' to pass the mic." if (role == first_speaker) else ""
-
-    show_topic.setText(f"Discussion topic: {conflict_text}")
+    show_topic.setText(f"Discussion topic: {display_topic}")
 
     show_role_txt.setText(role_text)
     show_pass.setText(pass_text)
-
     show_role_txt.setAutoDraw(True)
     show_timer.setAutoDraw(True)
     show_pass.setAutoDraw(True)
@@ -386,8 +347,8 @@ def main(pid: str, session: int, csv_path: str):
                    dyad=dyad, session=session, exp_condition=exp_condition,
                    conflict_text=conflict_text, first_speaker=first_speaker, participant_role=role)
 
-    # TimingsLog: communication_start + initial role label
-    fLog.write(f"{dyad},{session},{exp_condition},{current_role},{time.time()},{run_clock.getTime()},{comm_clock.getTime()},"
+    # TimingsLog: communication_start + initial role
+    fLog.write(f"{dyad},{session},{SESSION_TYPE},{exp_condition},{current_role},{time.time()},{run_clock.getTime()},{comm_clock.getTime()},"
                f"{conflict_text},{first_speaker},{role}\n"); fLog.flush()
 
     while comm_clock.getTime() < COMM_S:
@@ -397,7 +358,7 @@ def main(pid: str, session: int, csv_path: str):
         keys_ttl = event.getKeys([TTL_KEY])
         if keys_ttl and (TTL_KEY in keys_ttl):
             log_ttl(fTTL, exp_condition, current_role_label, 'communication', run_clock, comm_clock,
-                    conflict_text, first_speaker, role, session, dyad)
+                    conflict_text, first_speaker, role, session, dyad, SESSION_TYPE)
             event.clearEvents(eventType='keyboard')
 
         # countdown
@@ -418,8 +379,8 @@ def main(pid: str, session: int, csv_path: str):
                 show_pass.setText("Press '1' to pass the mic." if new_txt == "YOUR TURN TO SPEAK" else "")
                 toggled_role = 'speaker' if new_txt == "YOUR TURN TO SPEAK" else 'listener'
 
-                # TimingsLog: role toggle moment
-                fLog.write(f"{dyad},{session},{exp_condition},{toggled_role},{time.time()},{run_clock.getTime()},{comm_clock.getTime()},"
+                # TimingsLog: role toggle
+                fLog.write(f"{dyad},{session},{SESSION_TYPE},{exp_condition},{toggled_role},{time.time()},{run_clock.getTime()},{comm_clock.getTime()},"
                            f"{conflict_text},{first_speaker},{role}\n"); fLog.flush()
 
                 # Main CSV: button press
@@ -428,88 +389,27 @@ def main(pid: str, session: int, csv_path: str):
                                dyad=dyad, session=session, exp_condition=exp_condition,
                                conflict_text=conflict_text, first_speaker=first_speaker, participant_role=role)
 
-    # stop showing comm UI
+    # Stop showing comm UI
     for stim in (show_role_txt, show_timer, show_pass, show_topic):
         stim.setAutoDraw(False)
 
     # TimingsLog: communication_end
-    fLog.write(f"{dyad},{session},{exp_condition},communication_end,{time.time()},{run_clock.getTime()},{comm_clock.getTime()},"
+    fLog.write(f"{dyad},{session},{SESSION_TYPE},{exp_condition},communication_end,{time.time()},{run_clock.getTime()},{comm_clock.getTime()},"
                f"{conflict_text},{first_speaker},{role}\n"); fLog.flush()
 
-    # --- PRE-OPINION BLANK ---
-    fLog.write(f"{dyad},{session},{exp_condition},pre_opinion_blank_start,{time.time()},{run_clock.getTime()},,"
-               f"{conflict_text},{first_speaker},{role}\n"); fLog.flush()
-
-    show_blank.draw(); win.flip()
-    preop_clock = core.Clock()
-    while preop_clock.getTime() < BETWEEN_TRIAL_S:
-        keys = event.getKeys([TTL_KEY, KEY_QUIT])
-        if keys:
-            if KEY_QUIT in keys: win.close(); core.quit()
-            if TTL_KEY in keys:
-                log_ttl(fTTL, exp_condition, '', 'pre_opinion_blank', run_clock, None,
-                        conflict_text, first_speaker, role, session, dyad)
-                event.clearEvents(eventType='keyboard')
-        core.wait(0.01)
-
-    # ===========================
-    # SOLO OPINION PHASE
-    # ===========================
-    show_opinion.setText(f"{OPINION_PROMPT} {conflict_text}")
-    show_opinion.setAutoDraw(True)
-    show_timer.setAutoDraw(True)
-
-    op_clock = core.Clock()
-
-    # main CSV: opinion_start
-    log_comm_press(thisExp, event_name='opinion_start', role_label='',
-                   run_clock=run_clock, comm_clock=op_clock,
-                   dyad=dyad, session=session, exp_condition=exp_condition,
-                   conflict_text=conflict_text, first_speaker=first_speaker, participant_role=role)
-
-    # TimingsLog: Opinion start
-    fLog.write(f"{dyad},{session},{exp_condition},opinion_start,{time.time()},{run_clock.getTime()},{op_clock.getTime()},"
-               f"{conflict_text},{first_speaker},{role}\n"); fLog.flush()
-
-    submitted = False
-    while op_clock.getTime() < OPINION_S and not submitted:
-        remaining = int(round(OPINION_S - op_clock.getTime()))
-        show_timer.setText(f"{remaining} seconds")
-        keys = event.getKeys([TTL_KEY, KEY_QUIT] + ([KEY_SUBMIT] if KEY_SUBMIT else []))
-        if keys:
-            if KEY_QUIT in keys: win.close(); core.quit()
-            if TTL_KEY in keys:
-                log_ttl(fTTL, exp_condition, '', 'opinion', run_clock, op_clock,
-                        conflict_text, first_speaker, role, session, dyad)
-                event.clearEvents(eventType='keyboard')
-            if KEY_SUBMIT and (KEY_SUBMIT in keys):
-                submitted = True; event.clearEvents(eventType='keyboard')
-        win.flip()
-
-    # TimingsLog: Opinion end
-    fLog.write(f"{dyad},{session},{exp_condition},opinion_end,{time.time()},{run_clock.getTime()},{op_clock.getTime()},"
-               f"{conflict_text},{first_speaker},{role}\n"); fLog.flush()
-
-    # Stop drawing opinion UI
-    show_opinion.setAutoDraw(False)
-    show_timer.setAutoDraw(False)
-    win.flip()  # clear
-
-    # --- POST-OPINION BLANK ---
-    fLog.write(f"{dyad},{session},{exp_condition},post_opinion_blank_start,{time.time()},{run_clock.getTime()},,"
-               f"{conflict_text},{first_speaker},{role}\n"); fLog.flush()
-
-    show_blank.draw(); win.flip()
-    blank_clock2 = core.Clock()
-    while blank_clock2.getTime() < BETWEEN_TRIAL_S:
-        keys = event.getKeys([TTL_KEY, KEY_QUIT])
-        if keys:
-            if KEY_QUIT in keys: win.close(); core.quit()
-            if TTL_KEY in keys:
-                log_ttl(fTTL, exp_condition, '', 'blank', run_clock, None,
-                        conflict_text, first_speaker, role, session, dyad)
-                event.clearEvents(eventType='keyboard')
-        core.wait(0.01)
+    # Main CSV: communication_end (explicit phase boundary)
+    end_role_label = 'speaker' if show_role_txt.text == "YOUR TURN TO SPEAK" else 'listener'
+    thisExp.addData('dyad', dyad)
+    thisExp.addData('session', session)
+    thisExp.addData('exp_condition', exp_condition)
+    thisExp.addData('event', 'communication_end')
+    thisExp.addData('role', end_role_label)
+    thisExp.addData('onset_run_s', run_clock.getTime())
+    thisExp.addData('onset_phase_s', comm_clock.getTime())
+    thisExp.addData('conflict_text', conflict_text)
+    thisExp.addData('first_speaker', first_speaker)
+    thisExp.addData('participant_role', role)
+    thisExp.nextEntry()
 
     # --- End screen ---
     show_end.draw(); win.flip(); core.wait(1.0)
