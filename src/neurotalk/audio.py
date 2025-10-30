@@ -297,7 +297,7 @@ class AudioOutputWorker:
             self._counter += 1
             if self._recorder:
                 try:
-                    self._recorder.write(AudioPacket(playback, self._counter, time.time()))
+                    self._recorder.write(packet)
                 except Exception as exc:
                     logging.debug("Recorder write failed: %s", exc, exc_info=exc)
                     self._last_error = exc
