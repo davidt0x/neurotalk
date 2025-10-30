@@ -91,9 +91,6 @@ def main() -> None:
     session = build_session(args)
     print(f"[{args.role}] connecting to {args.remote_ip}...")
     session.connect()
-    print(f"[{args.role}] connected. Running debug mode for {args.debug_duration}s...")
-    session.run_debug_mode(duration=args.debug_duration, ready_timeout=10.0, poll_interval=0.5)
-
     try:
         run_start = time.monotonic()
         # Turn 1
