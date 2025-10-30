@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import time
 
+import numpy as np
+
 import neurotalk.audio as audio_module
 from neurotalk.audio import AudioConfig, AudioInputWorker, AudioOutputWorker, AudioPacket
 
@@ -49,7 +51,9 @@ class FakeInputStream:
         return False
 
     def emit(self, data: bytes) -> None:
-        self._callback(data, 0, None, None)
+        frames = len(data) // 2
+        array = np.frombuffer(data, dtype=np.int16).reshape(frames, 1)
+        self._callback(array, frames, None, 0)
 
 
 class FakeOutputStream:
@@ -73,7 +77,10 @@ class FakeOutputStream:
         return False
 
     def emit(self):
-        return self._callback(None, self._config.chunk_frames, None, None)
+        frames = self._config.chunk_frames
+        array = np.zeros((frames, self._config.channels), dtype=np.int16)
+        self._callback(array, frames, None, 0)
+        return array.tobytes()
 
 
 class FakeStreamFactory:
@@ -135,17 +142,17 @@ def test_audio_input_worker_respects_transmit_toggle():
 
     worker = AudioInputWorker(AudioConfig(), on_packet, stream_factory=FakeStreamFactory())
     worker.enable_transmit(False)
-    worker._callback(b"\x01", 0, None, None)
+    array = np.frombuffer(b"\x01\x00", dtype=np.int16).reshape(1, 1)
+    worker._callback(array, 1, None, 0)
     assert packets == []
 
 
 def test_audio_input_worker_records_errors():
     """Recorder failures bubble into `last_error` and trigger abort flags."""
     worker = AudioInputWorker(AudioConfig(), lambda packet: None, recorder=ErrorRecorder(), stream_factory=FakeStreamFactory())
-    result = worker._callback(b"\x00", 0, None, None)
+    array = np.frombuffer(b"\x00\x00", dtype=np.int16).reshape(1, 1)
+    worker._callback(array, 1, None, 0)
     assert isinstance(worker.last_error, RuntimeError)
-    expected_flag = getattr(audio_module.pyaudio, "paAbort", 0) if audio_module.pyaudio else 0
-    assert result[1] == expected_flag
 
 
 def test_audio_output_worker_playback_and_recording():
@@ -158,13 +165,12 @@ def test_audio_output_worker_playback_and_recording():
 
     packet = make_packet_with_size(worker)
     worker.enqueue(packet)
-    chunk, flag = factory.output_stream.emit()
+    chunk = factory.output_stream.emit()
     worker.close()
 
     assert chunk == packet.pcm
-    assert recorder.packets == [packet]
-    expected_flag = getattr(audio_module.pyaudio, "paContinue", 0) if audio_module.pyaudio else 0
-    assert flag == expected_flag
+    assert len(recorder.packets) == 1
+    assert recorder.packets[0].pcm == chunk
 
 
 def test_audio_output_worker_disable_playback_and_error_capture():
@@ -178,10 +184,8 @@ def test_audio_output_worker_disable_playback_and_error_capture():
     worker.enable_playback(False)
     packet = make_packet_with_size(worker)
     worker.enqueue(packet)
-    chunk, flag = factory.output_stream.emit()
+    chunk = factory.output_stream.emit()
     worker.close()
 
     assert worker.last_error is not None
     assert chunk == worker._silence  # type: ignore[attr-defined]
-    expected_flag = getattr(audio_module.pyaudio, "paContinue", 0) if audio_module.pyaudio else 0
-    assert flag == expected_flag

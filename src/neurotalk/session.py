@@ -27,7 +27,7 @@ from .control import (
     classify_payload,
 )
 from .network import NetworkConfig, SocketBundle, configure_nonblocking, hole_punch, open_sockets
-from .audio import AudioInputWorker, AudioOutputWorker, PyAudioStreamFactory, StreamFactory, AudioPacket
+from .audio import AudioInputWorker, AudioOutputWorker, SoundDeviceStreamFactory, StreamFactory, AudioPacket
 from .records import RecorderTarget, WavRecorder
 
 
@@ -365,7 +365,7 @@ class ConversationSession:
             factory = self.state.stream_factory
             owns_factory = self.state.owns_stream_factory
         else:
-            factory = self._stream_factory_override or PyAudioStreamFactory()
+            factory = self._stream_factory_override or SoundDeviceStreamFactory()
             owns_factory = self._stream_factory_override is None
             self.state.stream_factory = factory
             self.state.owns_stream_factory = owns_factory

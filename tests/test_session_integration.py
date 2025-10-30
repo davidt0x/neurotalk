@@ -4,6 +4,8 @@ import threading
 import time
 from pathlib import Path
 
+import numpy as np
+
 from neurotalk.audio import AudioPacket
 from neurotalk.config import AudioConfig, NetworkConfig, RecordingConfig, SessionConfig
 from neurotalk.control import ControlMessageType
@@ -27,13 +29,16 @@ class FakeInputStream:
         return False
 
     def emit(self, data: bytes) -> None:
-        self._callback(data, 0, None, None)
+        frames = len(data) // 2
+        array = np.frombuffer(data, dtype=np.int16).reshape(frames, 1)
+        self._callback(array, frames, None, 0)
 
 
 class FakeOutputStream:
-    def __init__(self, callback, chunk_bytes: int):
+    def __init__(self, callback, chunk_bytes: int, channels: int):
         self._callback = callback
         self.chunk_bytes = chunk_bytes
+        self.channels = channels
 
     def start_stream(self) -> None:
         pass
@@ -48,8 +53,10 @@ class FakeOutputStream:
         return False
 
     def emit(self) -> bytes:
-        chunk, _ = self._callback(None, self.chunk_bytes, None, None)
-        return chunk
+        frames = self.chunk_bytes // 2
+        array = np.zeros((frames, self.channels), dtype=np.int16)
+        self._callback(array, frames, None, 0)
+        return array.tobytes()
 
 
 class FakeStreamFactory:
@@ -66,7 +73,7 @@ class FakeStreamFactory:
 
     def open_output_stream(self, config: AudioConfig, callback):
         self.chunk_bytes = config.chunk_frames * config.channels * 2
-        stream = FakeOutputStream(callback, self.chunk_bytes)
+        stream = FakeOutputStream(callback, self.chunk_bytes, config.channels)
         self.output_stream = stream
         return stream
 
