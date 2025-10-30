@@ -128,6 +128,7 @@ def test_end_to_end(tmp_path):
         assert isinstance(factory_b, FakeStreamFactory)
 
         sample = b"\x01\x02" * 4
+        session_a.start_segment("local_turn")
         factory_a.input_stream.emit(sample)
 
         chunk = b""
@@ -153,6 +154,7 @@ def test_end_to_end(tmp_path):
                 break
             time.sleep(0.05)
         assert chunk_after_enable.startswith(sample)
+        session_a.stop_segment()
 
         session_a.pass_turn(run_time=1.0, phase_time=1.0)
 
@@ -166,3 +168,5 @@ def test_end_to_end(tmp_path):
     finally:
         teardown_session(session_a)
         teardown_session(session_b)
+        segments = session_a.export_segments(tmp_path / "segments")
+        assert "local" in segments and segments["local"]

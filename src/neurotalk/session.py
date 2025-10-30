@@ -15,7 +15,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, Optional, Tuple
+from typing import Callable, Optional, Tuple, Dict, List
 
 from .config import SessionConfig
 from .control import (
@@ -47,6 +47,8 @@ class SessionState:
     stream_factory: Optional[StreamFactory] = None
     receiver_thread: Optional[threading.Thread] = None
     receiver_running: Optional[threading.Event] = None
+    local_recorder: Optional[WavRecorder] = None
+    remote_recorder: Optional[WavRecorder] = None
     owns_stream_factory: bool = False
 
 
@@ -182,6 +184,51 @@ class ConversationSession:
         now = wall_time if wall_time is not None else time.time()
         payload = TurnPassPayload(now, run_time, phase_time)
         self.send_turn_pass(payload)
+
+    def start_segment(self, label: str, *, metadata: Optional[dict[str, object]] = None) -> None:
+        """Begin a labeled segment for both local and remote recordings."""
+
+        if self.state.local_recorder:
+            self.state.local_recorder.start_segment(label, metadata=metadata)
+        if self.state.remote_recorder:
+            self.state.remote_recorder.start_segment(label, metadata=metadata)
+
+    def stop_segment(self) -> None:
+        """End the current segment for both local and remote recordings."""
+
+        if self.state.local_recorder:
+            self.state.local_recorder.stop_segment()
+        if self.state.remote_recorder:
+            self.state.remote_recorder.stop_segment()
+
+    def export_segments(self, destination: Optional[Path] = None, pattern: str = "{role}_{index:02d}_{label}.wav") -> Dict[str, List[Path]]:
+        """Write per-segment WAV files for local and remote recordings.
+
+        Parameters
+        ----------
+        destination:
+            Directory where segment files should be written. Defaults to a
+            `segments` folder under the recording directory.
+        pattern:
+            Filename pattern. May include `{role}`, `{index}`, and `{label}`.
+        """
+
+        if destination is None:
+            destination = self.config.recording.directory / "segments"
+        destination.mkdir(parents=True, exist_ok=True)
+
+        results: Dict[str, List[Path]] = {}
+        for role, recorder in (("local", self.state.local_recorder), ("remote", self.state.remote_recorder)):
+            if recorder and recorder.segments:
+                recorder.stop_segment()
+                if not getattr(recorder, "_closed", False):
+                    recorder.close()
+                role_pattern = pattern.replace("{role}", role)
+                role_dir = destination / role
+                role_dir.mkdir(parents=True, exist_ok=True)
+                paths = recorder.split_segments(role_dir, pattern=role_pattern)
+                results[role] = paths
+        return results
 
     def enable_transmit(self, enabled: bool) -> None:
         self.state.transmit_enabled = enabled
@@ -324,6 +371,8 @@ class ConversationSession:
             self.state.owns_stream_factory = owns_factory
 
         local_recorder, remote_recorder = self._create_recorders()
+        self.state.local_recorder = local_recorder
+        self.state.remote_recorder = remote_recorder
 
         output_worker = AudioOutputWorker(audio_cfg, recorder=remote_recorder, stream_factory=factory)
         input_worker = AudioInputWorker(audio_cfg, self._handle_outbound_packet, recorder=local_recorder, stream_factory=factory)
@@ -416,6 +465,15 @@ class ConversationSession:
                     logging.debug("Stream factory termination failed: %s", exc, exc_info=exc)
             self.state.stream_factory = None
             self.state.owns_stream_factory = False
+
+        if self.state.local_recorder:
+            self.state.local_recorder.stop_segment()
+            if not getattr(self.state.local_recorder, "_closed", False):
+                self.state.local_recorder.close()
+        if self.state.remote_recorder:
+            self.state.remote_recorder.stop_segment()
+            if not getattr(self.state.remote_recorder, "_closed", False):
+                self.state.remote_recorder.close()
 
     def _create_recorders(self) -> Tuple[Optional[WavRecorder], Optional[WavRecorder]]:
         recording_cfg = self.config.recording
