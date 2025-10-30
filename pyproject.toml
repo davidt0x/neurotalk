@@ -30,7 +30,10 @@ classifiers = [
   "Typing :: Typed",
 ]
 dynamic = ["version"]
-dependencies = []
+dependencies = [
+  'sounddevice',
+  'numpy >=1.20',
+]
 
 [project.urls]
 Homepage = "https://github.com/davidt0x/neurotalk"

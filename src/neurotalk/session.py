@@ -7,11 +7,15 @@ channel, and recording hooks exposed elsewhere in the package.
 
 from __future__ import annotations
 
+import logging
 import queue
+import struct
 import threading
 import time
 from dataclasses import dataclass
-from typing import Callable, Optional
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Callable, Optional, Tuple
 
 from .config import SessionConfig
 from .control import (
@@ -19,9 +23,12 @@ from .control import (
     TurnPassPayload,
     DEBUG_READY,
     DEBUG_STOP,
+    THANKS,
     classify_payload,
 )
 from .network import NetworkConfig, SocketBundle, configure_nonblocking, hole_punch, open_sockets
+from .audio import AudioInputWorker, AudioOutputWorker, PyAudioStreamFactory, StreamFactory, AudioPacket
+from .records import RecorderTarget, WavRecorder
 
 
 ControlHandler = Callable[[ControlMessageType, object | None], None]
@@ -35,6 +42,12 @@ class SessionState:
     start_time_common: Optional[float] = None
     transmit_enabled: bool = True
     receive_enabled: bool = True
+    input_worker: Optional[AudioInputWorker] = None
+    output_worker: Optional[AudioOutputWorker] = None
+    stream_factory: Optional[StreamFactory] = None
+    receiver_thread: Optional[threading.Thread] = None
+    receiver_running: Optional[threading.Event] = None
+    owns_stream_factory: bool = False
 
 
 class ConversationSession:
@@ -53,13 +66,20 @@ class ConversationSession:
     current class focuses on network and control scaffolding.
     """
 
-    def __init__(self, config: SessionConfig, *, control_handler: Optional[ControlHandler] = None):
+    def __init__(
+        self,
+        config: SessionConfig,
+        *,
+        control_handler: Optional[ControlHandler] = None,
+        stream_factory: Optional[StreamFactory] = None,
+    ):
         self.config = config
         self.state = SessionState()
         self._control_handler = control_handler
         self._control_thread: Optional[threading.Thread] = None
         self._control_running = threading.Event()
         self._control_queue: "queue.Queue[tuple[ControlMessageType, object | None]]" = queue.Queue()
+        self._stream_factory_override = stream_factory
 
     # ---- context manager -------------------------------------------------
     def __enter__(self) -> "ConversationSession":
@@ -89,7 +109,7 @@ class ConversationSession:
         flush_pending(bundle)
         self.state.sockets = bundle
         self._start_control_loop()
-        # TODO: initialize audio workers
+        self._initialize_audio()
 
     def close(self) -> None:
         """Terminate control loop and close sockets."""
@@ -97,9 +117,12 @@ class ConversationSession:
         self._stop_control_loop()
         bundle = self.state.sockets
         if bundle is not None:
+            self._send_goodbye_packets(bundle)
+        self._shutdown_audio()
+        bundle = self.state.sockets
+        if bundle is not None:
             bundle.close()
             self.state.sockets = None
-        # TODO: tear down audio resources
 
     # ---- control loop ----------------------------------------------------
     def _start_control_loop(self) -> None:
@@ -153,13 +176,22 @@ class ConversationSession:
         remote_ip, port_in, port_out, port_comm = sockets.remote
         sockets.control.sendto(payload.pack(), (remote_ip, port_comm))
 
+    def pass_turn(self, *, run_time: float, phase_time: float, wall_time: Optional[float] = None) -> None:
+        """Notify the remote peer that control has been passed to them."""
+
+        now = wall_time if wall_time is not None else time.time()
+        payload = TurnPassPayload(now, run_time, phase_time)
+        self.send_turn_pass(payload)
+
     def enable_transmit(self, enabled: bool) -> None:
         self.state.transmit_enabled = enabled
-        # TODO: toggle microphone stream without stopping recording
+        if self.state.input_worker:
+            self.state.input_worker.enable_transmit(enabled)
 
     def enable_receive(self, enabled: bool) -> None:
         self.state.receive_enabled = enabled
-        # TODO: toggle speaker stream while still recording incoming packets
+        if self.state.output_worker:
+            self.state.output_worker.enable_playback(enabled)
 
     # ---- synchronization -------------------------------------------------
     def sync_start(self, delay_seconds: float) -> float:
@@ -269,3 +301,163 @@ class ConversationSession:
                     continue
                 if msg_type == ControlMessageType.DEBUG_STOP:
                     break
+
+        # Ensure the control loop remains active after debug negotiations.
+        if not self._control_running.is_set() or not (self._control_thread and self._control_thread.is_alive()):
+            self._start_control_loop()
+
+    # ---- audio helpers --------------------------------------------------
+    def _initialize_audio(self) -> None:
+        sockets = self.state.sockets
+        if sockets is None:
+            return
+
+        audio_cfg = self.config.audio
+
+        if self.state.stream_factory:
+            factory = self.state.stream_factory
+            owns_factory = self.state.owns_stream_factory
+        else:
+            factory = self._stream_factory_override or PyAudioStreamFactory()
+            owns_factory = self._stream_factory_override is None
+            self.state.stream_factory = factory
+            self.state.owns_stream_factory = owns_factory
+
+        local_recorder, remote_recorder = self._create_recorders()
+
+        output_worker = AudioOutputWorker(audio_cfg, recorder=remote_recorder, stream_factory=factory)
+        input_worker = AudioInputWorker(audio_cfg, self._handle_outbound_packet, recorder=local_recorder, stream_factory=factory)
+
+        output_worker.enable_playback(self.state.receive_enabled)
+        input_worker.enable_transmit(self.state.transmit_enabled)
+
+        output_worker.start()
+        input_worker.start()
+
+        self.state.output_worker = output_worker
+        self.state.input_worker = input_worker
+
+        receiver_running = threading.Event()
+        receiver_running.set()
+        self.state.receiver_running = receiver_running
+        receiver_thread = threading.Thread(target=self._receive_audio_loop, name="NeuroTalkAudioRecv", daemon=True)
+        self.state.receiver_thread = receiver_thread
+        receiver_thread.start()
+
+    def _handle_outbound_packet(self, packet: AudioPacket) -> None:
+        sockets = self.state.sockets
+        if not sockets:
+            return
+        payload = self._encode_packet(packet)
+        remote_ip, port_in, _, _ = sockets.remote
+        try:
+            sockets.outbound.sendto(payload, (remote_ip, port_in))
+        except OSError as exc:
+            logging.debug("Failed to send audio packet: %s", exc, exc_info=exc)
+
+    def _receive_audio_loop(self) -> None:
+        sockets = self.state.sockets
+        if sockets is None:
+            return
+        event = self.state.receiver_running
+        if event is None:
+            return
+        while event.is_set():
+            try:
+                data = sockets.inbound.recv(65536)
+            except (BlockingIOError, TimeoutError):
+                continue
+            except OSError:
+                break
+            if not data:
+                continue
+            if data == THANKS:
+                break
+            packet = self._decode_packet(data)
+            if packet is None:
+                continue
+            output = self.state.output_worker
+            if output:
+                output.enqueue(packet)
+
+    def _encode_packet(self, packet: AudioPacket) -> bytes:
+        return packet.pcm + struct.pack("<l", packet.counter) + struct.pack("<d", packet.timestamp)
+
+    def _decode_packet(self, payload: bytes) -> Optional[AudioPacket]:
+        if len(payload) < 12:
+            return None
+        counter = struct.unpack("<l", payload[-12:-8])[0]
+        timestamp = struct.unpack("<d", payload[-8:])[0]
+        pcm = payload[:-12]
+        return AudioPacket(pcm=pcm, counter=counter, timestamp=timestamp)
+
+    def _shutdown_audio(self) -> None:
+        event = self.state.receiver_running
+        if event is not None:
+            event.clear()
+        thread = self.state.receiver_thread
+        if thread is not None:
+            thread.join(timeout=1.0)
+        self.state.receiver_thread = None
+        self.state.receiver_running = None
+
+        if self.state.input_worker:
+            self.state.input_worker.close()
+            self.state.input_worker = None
+        if self.state.output_worker:
+            self.state.output_worker.close()
+            self.state.output_worker = None
+
+        if self.state.stream_factory:
+            if self.state.owns_stream_factory:
+                try:
+                    self.state.stream_factory.terminate()
+                except Exception as exc:
+                    logging.debug("Stream factory termination failed: %s", exc, exc_info=exc)
+            self.state.stream_factory = None
+            self.state.owns_stream_factory = False
+
+    def _create_recorders(self) -> Tuple[Optional[WavRecorder], Optional[WavRecorder]]:
+        recording_cfg = self.config.recording
+        directory: Path = recording_cfg.directory
+        directory.mkdir(parents=True, exist_ok=True)
+
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        base_name = f"{self.config.participant_id}_{self.config.role}_{timestamp}"
+
+        audio_cfg = self.config.audio
+
+        local_path = recording_cfg.local_track
+        if local_path is None:
+            local_path = directory / f"{base_name}_local.wav"
+        else:
+            local_path = local_path if local_path.is_absolute() else directory / local_path
+
+        remote_path = recording_cfg.remote_track
+        if remote_path is None:
+            remote_path = directory / f"{base_name}_remote.wav"
+        else:
+            remote_path = remote_path if remote_path.is_absolute() else directory / remote_path
+
+        local_target = RecorderTarget(
+            path=local_path,
+            channels=audio_cfg.channels,
+            sample_rate_hz=audio_cfg.sample_rate_hz,
+            sample_width_bytes=2,
+        )
+        remote_target = RecorderTarget(
+            path=remote_path,
+            channels=audio_cfg.channels,
+            sample_rate_hz=audio_cfg.sample_rate_hz,
+            sample_width_bytes=2,
+        )
+
+        return WavRecorder(local_target), WavRecorder(remote_target)
+
+    def _send_goodbye_packets(self, bundle: SocketBundle) -> None:
+        remote_ip, port_in, _, _ = bundle.remote
+        for _ in range(3):
+            try:
+                bundle.outbound.sendto(THANKS, (remote_ip, port_in))
+            except OSError:
+                break

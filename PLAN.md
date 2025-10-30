@@ -55,6 +55,7 @@
    - Create an integration harness that mimics two peers exchanging audio locally (loopback) to validate the new API.
   - Unit-tests for audio workers (using mocked PyAudio streams) live in `tests/test_audio.py`.
   - Debug-mode loopback is covered by `tests/test_session_debug.py`.
+  - End-to-end session behavior (debug mode, transmit toggles) is exercised by `tests/test_session_integration.py`.
   - WAV recording and segment splitting are verified in `tests/test_records.py`.
    - Document manual test steps for running alongside `CONV_scan.py`.
 
@@ -118,7 +119,7 @@
 - `src/neurotalk/control.py` formalizes the control payload vocabulary with typed helpers.
 - `src/neurotalk/network.py` wraps socket creation, STUN diagnostics, and hole punching.
 - `src/neurotalk/audio.py` implements thread-based PyAudio-backed input/output workers with injectable stream factories.
-- `src/neurotalk/session.py` provides the `ConversationSession` orchestrator skeleton, control polling loop, and debug-mode handshake helpers.
+- `src/neurotalk/session.py` now wires the audio transport, provides the control loop, and handles debug-mode handshakes.
 - `src/neurotalk/records.py` now provides WAV recorders, segment tracking, and telemetry hooks.
 
 ### Control Message Vocabulary
