@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import time
 from pathlib import Path
+import queue
 
 from neurotalk.config import AudioConfig, NetworkConfig, RecordingConfig, SessionConfig
 from neurotalk.control import ControlMessageType
@@ -33,7 +34,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--speaker-order",
         choices=["first", "second"],
-        default="first",
+        default=None,
         help="Whether this peer speaks first or second",
     )
     return parser.parse_args()
@@ -61,7 +62,10 @@ def build_session(args: argparse.Namespace) -> ConversationSession:
 
 def wait_for_turn(session: ConversationSession) -> None:
     while True:
-        msg_type, _ = session.next_control_event(timeout=0.5)
+        try:
+            msg_type, _ = session.next_control_event(timeout=0.5)
+        except queue.Empty:
+            continue
         if msg_type == ControlMessageType.TURN_PASS:
             return
 
@@ -88,6 +92,8 @@ def main() -> None:
     args = parse_args()
     if args.nat_role is None:
         args.nat_role = 1 if args.role.upper() == "A" else 0
+    if args.speaker_order is None:
+        args.speaker_order = "first" if args.role.upper() == "A" else "second"
     session = build_session(args)
     print(f"[{args.role}] connecting to {args.remote_ip}...")
     session.connect()
