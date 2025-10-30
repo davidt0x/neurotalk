@@ -7,17 +7,18 @@ channel, and recording hooks exposed elsewhere in the package.
 
 from __future__ import annotations
 
-import contextlib
 import queue
 import threading
 import time
 from dataclasses import dataclass
-from typing import Callable, Iterator, Optional
+from typing import Callable, Optional
 
 from .config import SessionConfig
 from .control import (
     ControlMessageType,
     TurnPassPayload,
+    DEBUG_READY,
+    DEBUG_STOP,
     classify_payload,
 )
 from .network import NetworkConfig, SocketBundle, configure_nonblocking, hole_punch, open_sockets
@@ -193,3 +194,78 @@ class ConversationSession:
         common = max(local_time, partner_time) + delay_seconds
         self.state.start_time_common = common
         return common
+
+    # ---- debug mode -----------------------------------------------------
+    def run_debug_mode(
+        self,
+        *,
+        ready_timeout: float = 5.0,
+        duration: Optional[float] = None,
+        poll_interval: float = 0.5,
+        on_ready: Optional[Callable[[], None]] = None,
+    ) -> None:
+        """Coordinate a pre-experiment debug window with the remote partner.
+
+        The method signals readiness over the control channel, waits for the partner
+        to acknowledge, then blocks until either `duration` seconds elapse or a
+        `DEBUG_STOP` message is received from the partner. At shutdown, a final
+        `DEBUG_STOP` message is sent to ensure both sides exit cleanly.
+        """
+
+        sockets = self.state.sockets
+        if sockets is None:
+            raise RuntimeError("Session not connected")
+
+        remote_ip, _, _, port_comm = sockets.remote
+
+        def send(token: bytes) -> None:
+            sockets.control.sendto(token, (remote_ip, port_comm))
+
+        send(DEBUG_READY)
+
+        partner_ready = False
+        partner_requested_stop = False
+        deadline = time.time() + ready_timeout
+
+        while time.time() < deadline and not partner_ready and not partner_requested_stop:
+            try:
+                msg_type, _ = self.next_control_event(timeout=poll_interval)
+            except queue.Empty:
+                send(DEBUG_READY)
+                continue
+            if msg_type == ControlMessageType.DEBUG_READY:
+                partner_ready = True
+            elif msg_type == ControlMessageType.DEBUG_STOP:
+                partner_requested_stop = True
+
+        if partner_requested_stop:
+            send(DEBUG_STOP)
+            return
+
+        if not partner_ready:
+            raise TimeoutError("Partner did not respond to debug ready signal")
+
+        if on_ready:
+            on_ready()
+
+        if duration is not None and duration > 0:
+            end_time = time.time() + duration
+            while time.time() < end_time and not partner_requested_stop:
+                try:
+                    msg_type, _ = self.next_control_event(timeout=poll_interval)
+                except queue.Empty:
+                    continue
+                if msg_type == ControlMessageType.DEBUG_STOP:
+                    partner_requested_stop = True
+
+        send(DEBUG_STOP)
+
+        if not partner_requested_stop:
+            stop_deadline = time.time() + ready_timeout
+            while time.time() < stop_deadline:
+                try:
+                    msg_type, _ = self.next_control_event(timeout=poll_interval)
+                except queue.Empty:
+                    continue
+                if msg_type == ControlMessageType.DEBUG_STOP:
+                    break

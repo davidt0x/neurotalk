@@ -25,6 +25,8 @@ class ControlMessageType(Enum):
     TURN_PASS = auto()
     ESCAPE = auto()
     THANKS = auto()
+    DEBUG_READY = auto()
+    DEBUG_STOP = auto()
 
 
 HANDSHAKE_HELLO = b"hello!"
@@ -33,6 +35,8 @@ HANDSHAKE_READY = b"please"
 SYNC_REQUEST = b"syncTimeNow"
 ESCAPE = b"esc"
 THANKS = b"thanks"
+DEBUG_READY = b"debugReady"
+DEBUG_STOP = b"debugStop"
 
 _DOUBLE = struct.Struct("<d")
 _TRIPLE = struct.Struct("<ddd")
@@ -104,6 +108,10 @@ def classify_payload(data: bytes) -> Tuple[ControlMessageType, Optional[object]]
         return ControlMessageType.ESCAPE, None
     if data == THANKS:
         return ControlMessageType.THANKS, None
+    if data == DEBUG_READY:
+        return ControlMessageType.DEBUG_READY, None
+    if data == DEBUG_STOP:
+        return ControlMessageType.DEBUG_STOP, None
 
     if len(data) == _DOUBLE.size:
         return ControlMessageType.SYNC_TIMESTAMP, SyncTimestamp.unpack(data)

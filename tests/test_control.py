@@ -13,6 +13,8 @@ from neurotalk.control import (
     SYNC_REQUEST,
     ESCAPE,
     THANKS,
+    DEBUG_READY,
+    DEBUG_STOP,
 )
 
 
@@ -25,6 +27,8 @@ def test_token_messages_classification():
         (SYNC_REQUEST, ControlMessageType.SYNC_REQUEST),
         (ESCAPE, ControlMessageType.ESCAPE),
         (THANKS, ControlMessageType.THANKS),
+        (DEBUG_READY, ControlMessageType.DEBUG_READY),
+        (DEBUG_STOP, ControlMessageType.DEBUG_STOP),
     ]:
         msg_type, payload = classify_payload(token)
         assert msg_type is expected
