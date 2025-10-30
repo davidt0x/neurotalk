@@ -175,7 +175,7 @@ class ConversationSession:
         sockets = self.state.sockets
         if not sockets:
             raise RuntimeError("Session not connected")
-        remote_ip, port_in, port_out, port_comm = sockets.remote
+        remote_ip, _, _, port_comm = sockets.remote
         sockets.control.sendto(payload.pack(), (remote_ip, port_comm))
 
     def pass_turn(self, *, run_time: float, phase_time: float, wall_time: Optional[float] = None) -> None:
