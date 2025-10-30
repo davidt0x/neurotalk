@@ -105,7 +105,6 @@ class SoundDeviceStreamFactory:
             dtype="int16",
             blocksize=config.chunk_frames,
             callback=callback,
-            start=False,
         )
         return SoundDeviceInputStream(stream)
 
@@ -116,7 +115,6 @@ class SoundDeviceStreamFactory:
             dtype="int16",
             blocksize=config.chunk_frames,
             callback=callback,
-            start=False,
         )
         return SoundDeviceOutputStream(stream)
 

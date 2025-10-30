@@ -25,7 +25,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--remote-in", type=int, default=30002, help="Remote inbound audio port")
     parser.add_argument("--remote-out", type=int, default=30001, help="Remote outbound audio port")
     parser.add_argument("--remote-control", type=int, default=30003, help="Remote control port")
-    parser.add_argument("--nat-role", type=int, choices=[0, 1], default=1, help="NAT role: 0=passive, 1=active")
+    parser.add_argument("--nat-role", type=int, choices=[0, 1], default=None, help="NAT role: 0=passive, 1=active")
     parser.add_argument("--chunk-frames", type=int, default=512, help="Audio buffer size (default: 512)")
     parser.add_argument("--sample-rate", type=int, default=16000, help="Sample rate Hz (default: 16000)")
     parser.add_argument("--turn-duration", type=float, default=10.0, help="Seconds to speak before passing the turn")
@@ -86,6 +86,8 @@ def speak_segment(session: ConversationSession, label: str, duration: float, run
 
 def main() -> None:
     args = parse_args()
+    if args.nat_role is None:
+        args.nat_role = 1 if args.role.upper() == "A" else 0
     session = build_session(args)
     print(f"[{args.role}] connecting to {args.remote_ip}...")
     session.connect()
