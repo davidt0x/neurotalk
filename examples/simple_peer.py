@@ -130,32 +130,24 @@ def main() -> None:
     session.connect()
     try:
         run_start = time.monotonic()
-        if args.speaker_order == "first":
-            set_mode(session, speaking=True)
-        else:
-            set_mode(session, speaking=False)
-        # Turn 1
-        if args.speaker_order == "first":
-            speak_segment(session, f"{args.segment_label}_turn1", args.turn_duration, time.monotonic() - run_start)
-            print(f"[{args.role}] Waiting for partner...")
-            set_mode(session, speaking=False)
-            wait_for_turn(session)
-        else:
-            print(f"[{args.role}] Waiting for partner...")
-            set_mode(session, speaking=False)
-            wait_for_turn(session)
-            speak_segment(session, f"{args.segment_label}_turn1", args.turn_duration, time.monotonic() - run_start)
+        has_control = args.speaker_order == "first"
+        set_mode(session, speaking=has_control)
+        turn_labels = [f"{args.segment_label}_turn1", f"{args.segment_label}_turn2"]
 
-        # Turn 2
+        for label in turn_labels:
+            if not has_control:
+                print(f"[{args.role}] Waiting for partner...")
+                set_mode(session, speaking=False)
+                wait_for_turn(session)
+                has_control = True
+
+            speak_segment(session, label, args.turn_duration, time.monotonic() - run_start)
+            has_control = False
+
+        set_mode(session, speaking=False)
+
         if args.speaker_order == "first":
-            print(f"[{args.role}] Waiting for partner...")
-            set_mode(session, speaking=False)
-            wait_for_turn(session)
-            speak_segment(session, f"{args.segment_label}_turn2", args.turn_duration, time.monotonic() - run_start)
-        else:
-            speak_segment(session, f"{args.segment_label}_turn2", args.turn_duration, time.monotonic() - run_start)
-            print(f"[{args.role}] Waiting for partner...")
-            set_mode(session, speaking=False)
+            print(f"[{args.role}] Waiting for partner to finish...")
             wait_for_turn(session)
 
         export_dir = Path(args.record_dir) / "segments"
