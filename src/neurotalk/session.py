@@ -152,13 +152,13 @@ class ConversationSession:
         while self._control_running.is_set():
             try:
                 data = sockets.control.recv(1024)
+            except TimeoutError:
+                continue
+            except BlockingIOError:
+                continue
             except OSError as exc:
                 logger.debug("control_loop recv OSError: %s", exc, exc_info=exc)
                 break
-            except BlockingIOError:
-                continue
-            except TimeoutError:
-                continue
             if not data:
                 logger.debug("control_loop received empty datagram")
                 continue
