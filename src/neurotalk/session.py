@@ -17,6 +17,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Optional, Tuple, Dict, List
 
+logger = logging.getLogger(__name__)
+
 from .config import SessionConfig
 from .control import (
     ControlMessageType,
@@ -159,6 +161,7 @@ class ConversationSession:
                 msg_type, payload = classify_payload(data)
             except ValueError:
                 continue
+            logger.debug("control_loop received %s", msg_type)
             self._control_queue.put((msg_type, payload))
             if self._control_handler:
                 self._control_handler(msg_type, payload)
@@ -169,14 +172,28 @@ class ConversationSession:
         Block until the next control event arrives (or timeout occurs).
         """
 
-        return self._control_queue.get(timeout=timeout)
+        if not self._control_running.is_set():
+            logger.debug("next_control_event called while control loop inactive")
+        try:
+            event = self._control_queue.get(timeout=timeout)
+            logger.debug("next_control_event -> %s", event[0])
+            return event
+        except queue.Empty:
+            logger.debug("next_control_event timeout after %s", timeout)
+            raise
 
     def send_turn_pass(self, payload: TurnPassPayload) -> None:
+        logger.debug("send_turn_pass attempting send: %s", payload)
         sockets = self.state.sockets
         if not sockets:
             raise RuntimeError("Session not connected")
         remote_ip, _, _, port_comm = sockets.remote
-        sockets.control.sendto(payload.pack(), (remote_ip, port_comm))
+        try:
+            sockets.control.sendto(payload.pack(), (remote_ip, port_comm))
+            logger.debug("send_turn_pass sent to %s:%s", remote_ip, port_comm)
+        except OSError as exc:
+            logger.debug("send_turn_pass send failed: %s", exc, exc_info=exc)
+            raise
 
     def pass_turn(self, *, run_time: float, phase_time: float, wall_time: Optional[float] = None) -> None:
         """Notify the remote peer that control has been passed to them."""
@@ -371,8 +388,11 @@ class ConversationSession:
             self.state.owns_stream_factory = owns_factory
 
         local_recorder, remote_recorder = self._create_recorders()
+        logger.debug("recorders created local=%s remote=%s", local_recorder, remote_recorder)
         self.state.local_recorder = local_recorder
         self.state.remote_recorder = remote_recorder
+
+        logger.debug("initializing audio workers")
 
         output_worker = AudioOutputWorker(audio_cfg, recorder=remote_recorder, stream_factory=factory)
         input_worker = AudioInputWorker(audio_cfg, self._handle_outbound_packet, recorder=local_recorder, stream_factory=factory)
@@ -392,6 +412,7 @@ class ConversationSession:
         receiver_thread = threading.Thread(target=self._receive_audio_loop, name="NeuroTalkAudioRecv", daemon=True)
         self.state.receiver_thread = receiver_thread
         receiver_thread.start()
+        logger.debug("audio receiver thread launched")
 
     def _handle_outbound_packet(self, packet: AudioPacket) -> None:
         sockets = self.state.sockets
@@ -402,14 +423,16 @@ class ConversationSession:
         try:
             sockets.outbound.sendto(payload, (remote_ip, port_in))
         except OSError as exc:
-            logging.debug("Failed to send audio packet: %s", exc, exc_info=exc)
+            logger.debug("Failed to send audio packet: %s", exc, exc_info=exc)
 
     def _receive_audio_loop(self) -> None:
         sockets = self.state.sockets
         if sockets is None:
+            logger.debug("_receive_audio_loop started without sockets")
             return
         event = self.state.receiver_running
         if event is None:
+            logger.debug("_receive_audio_loop missing event state")
             return
         while event.is_set():
             try:
@@ -419,15 +442,20 @@ class ConversationSession:
             except OSError:
                 break
             if not data:
+                logger.debug("_receive_audio_loop got empty packet")
                 continue
             if data == THANKS:
+                logger.debug("_receive_audio_loop received THANKS sentinel")
                 break
             packet = self._decode_packet(data)
             if packet is None:
+                logger.debug("_receive_audio_loop dropped undecodable payload len=%s", len(data))
                 continue
             output = self.state.output_worker
             if output:
                 output.enqueue(packet)
+            else:
+                logger.debug("_receive_audio_loop missing output worker for packet")
 
     def _encode_packet(self, packet: AudioPacket) -> bytes:
         return packet.pcm + struct.pack("<l", packet.counter) + struct.pack("<d", packet.timestamp)
@@ -462,7 +490,7 @@ class ConversationSession:
                 try:
                     self.state.stream_factory.terminate()
                 except Exception as exc:
-                    logging.debug("Stream factory termination failed: %s", exc, exc_info=exc)
+                    logger.debug("Stream factory termination failed: %s", exc, exc_info=exc)
             self.state.stream_factory = None
             self.state.owns_stream_factory = False
 

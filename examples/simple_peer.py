@@ -7,10 +7,14 @@ import argparse
 import time
 from pathlib import Path
 import queue
+import logging
 
 from neurotalk.config import AudioConfig, NetworkConfig, RecordingConfig, SessionConfig
 from neurotalk.control import ControlMessageType
 from neurotalk.session import ConversationSession
+
+
+LOGGER = logging.getLogger("neurotalk.simple_peer")
 
 
 def parse_args() -> argparse.Namespace:
@@ -37,6 +41,11 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Whether this peer speaks first or second",
     )
+    parser.add_argument(
+        "--log-level",
+        default="INFO",
+        help="Logging level (e.g., INFO, DEBUG) for instrumentation output",
+    )
     return parser.parse_args()
 
 
@@ -61,17 +70,21 @@ def build_session(args: argparse.Namespace) -> ConversationSession:
 
 
 def wait_for_turn(session: ConversationSession) -> None:
+    LOGGER.debug("Waiting for TURN_PASS events")
     while True:
         try:
             msg_type, _ = session.next_control_event(timeout=0.5)
         except queue.Empty:
+            LOGGER.debug("No TURN_PASS yet; retrying")
             continue
         if msg_type == ControlMessageType.TURN_PASS:
+            LOGGER.debug("TURN_PASS received")
             return
 
 
 def set_mode(session: ConversationSession, *, speaking: bool) -> None:
     """Configure local transmit/receive based on current role."""
+    LOGGER.debug("set_mode speaking=%s", speaking)
     if speaking:
         session.enable_transmit(True)
         session.enable_receive(False)
@@ -81,6 +94,7 @@ def set_mode(session: ConversationSession, *, speaking: bool) -> None:
 
 
 def speak_segment(session: ConversationSession, label: str, duration: float, run_clock: float) -> None:
+    LOGGER.debug("Starting segment %s duration=%.2f run_clock=%.2f", label, duration, run_clock)
     set_mode(session, speaking=True)
     session.start_segment(label)
     print(f"[{session.config.role}] Speak now ({duration:.1f}s). Press Enter to pass early.")
@@ -95,6 +109,7 @@ def speak_segment(session: ConversationSession, label: str, duration: float, run
         time.sleep(0.5)
     session.stop_segment()
     phase_clock = time.monotonic() - start
+    LOGGER.debug("Passing turn after segment %s phase_clock=%.2f", label, phase_clock)
     session.pass_turn(run_time=run_clock, phase_time=phase_clock)
     print(f"[{session.config.role}] Turn passed.")
     set_mode(session, speaking=False)
@@ -102,6 +117,10 @@ def speak_segment(session: ConversationSession, label: str, duration: float, run
 
 def main() -> None:
     args = parse_args()
+    logging.basicConfig(
+        level=getattr(logging, args.log_level.upper(), logging.INFO),
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
     if args.nat_role is None:
         args.nat_role = 1 if args.role.upper() == "A" else 0
     if args.speaker_order is None:
@@ -111,6 +130,10 @@ def main() -> None:
     session.connect()
     try:
         run_start = time.monotonic()
+        if args.speaker_order == "first":
+            set_mode(session, speaking=True)
+        else:
+            set_mode(session, speaking=False)
         # Turn 1
         if args.speaker_order == "first":
             speak_segment(session, f"{args.segment_label}_turn1", args.turn_duration, time.monotonic() - run_start)
