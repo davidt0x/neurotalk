@@ -111,6 +111,7 @@ class ConversationSession:
 
         configure_nonblocking(bundle)
         flush_pending(bundle)
+        logger.debug("connect resolved remote address: %s", remote)
         self.state.sockets = bundle
         self._start_control_loop()
         self._initialize_audio()
@@ -135,6 +136,7 @@ class ConversationSession:
         self._control_running.set()
         self._control_thread = threading.Thread(target=self._control_loop, name="NeuroTalkControl", daemon=True)
         self._control_thread.start()
+        logger.debug("control loop thread started")
 
     def _stop_control_loop(self) -> None:
         self._control_running.clear()
@@ -146,25 +148,31 @@ class ConversationSession:
         sockets = self.state.sockets
         if sockets is None:
             return
+        logger.debug("control_loop entering remote=%s", sockets.remote)
         while self._control_running.is_set():
             try:
                 data = sockets.control.recv(1024)
-            except OSError:
+            except OSError as exc:
+                logger.debug("control_loop recv OSError: %s", exc, exc_info=exc)
                 break
             except BlockingIOError:
                 continue
             except TimeoutError:
                 continue
             if not data:
+                logger.debug("control_loop received empty datagram")
                 continue
+            logger.debug("control_loop raw len=%s data=%r", len(data), data)
             try:
                 msg_type, payload = classify_payload(data)
             except ValueError:
+                logger.debug("control_loop failed to classify payload len=%s", len(data))
                 continue
             logger.debug("control_loop received %s", msg_type)
             self._control_queue.put((msg_type, payload))
             if self._control_handler:
                 self._control_handler(msg_type, payload)
+        logger.debug("control_loop exiting")
 
     # ---- control helpers -------------------------------------------------
     def next_control_event(self, timeout: Optional[float] = None) -> tuple[ControlMessageType, object | None]:
