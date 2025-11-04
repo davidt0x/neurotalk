@@ -210,21 +210,41 @@ class ConversationSession:
         payload = TurnPassPayload(now, run_time, phase_time)
         self.send_turn_pass(payload)
 
-    def start_segment(self, label: str, *, metadata: Optional[dict[str, object]] = None) -> None:
-        """Begin a labeled segment for both local and remote recordings."""
+    def start_segment(
+        self,
+        label: str,
+        *,
+        metadata: Optional[dict[str, object]] = None,
+        target: str | tuple[str, ...] = "both",
+    ) -> None:
+        """Begin a labeled segment for the requested recording targets."""
 
-        if self.state.local_recorder:
+        targets = self._resolve_segment_targets(target)
+        if "local" in targets and self.state.local_recorder:
             self.state.local_recorder.start_segment(label, metadata=metadata)
-        if self.state.remote_recorder:
+        if "remote" in targets and self.state.remote_recorder:
             self.state.remote_recorder.start_segment(label, metadata=metadata)
 
-    def stop_segment(self) -> None:
-        """End the current segment for both local and remote recordings."""
+    def stop_segment(self, *, target: str | tuple[str, ...] = "both") -> None:
+        """End the current segment for the requested recording targets."""
 
-        if self.state.local_recorder:
+        targets = self._resolve_segment_targets(target)
+        if "local" in targets and self.state.local_recorder:
             self.state.local_recorder.stop_segment()
-        if self.state.remote_recorder:
+        if "remote" in targets and self.state.remote_recorder:
             self.state.remote_recorder.stop_segment()
+
+    def _resolve_segment_targets(self, target: str | tuple[str, ...]) -> set[str]:
+        if isinstance(target, str):
+            if target == "both":
+                return {"local", "remote"}
+            target_set = {target}
+        else:
+            target_set = set(target)
+        invalid = target_set.difference({"local", "remote"})
+        if invalid:
+            raise ValueError(f"Unknown segment target(s): {sorted(invalid)}")
+        return target_set
 
     def export_segments(self, destination: Optional[Path] = None, pattern: str = "{role}_{index:02d}_{label}.wav") -> Dict[str, List[Path]]:
         """Write per-segment WAV files for local and remote recordings.

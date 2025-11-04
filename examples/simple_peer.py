@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import time
 from pathlib import Path
+from collections import deque
 import queue
 import logging
 
@@ -69,17 +70,25 @@ def build_session(args: argparse.Namespace) -> ConversationSession:
     return ConversationSession(session_config)
 
 
-def wait_for_turn(session: ConversationSession) -> None:
+def wait_for_turn(session: ConversationSession, *, remote_label: str | None = None) -> None:
     LOGGER.debug("Waiting for TURN_PASS events")
-    while True:
-        try:
-            msg_type, _ = session.next_control_event(timeout=0.5)
-        except queue.Empty:
-            LOGGER.debug("No TURN_PASS yet; retrying")
-            continue
-        if msg_type == ControlMessageType.TURN_PASS:
-            LOGGER.debug("TURN_PASS received")
-            return
+    if remote_label:
+        LOGGER.debug("Starting remote segment %s", remote_label)
+        session.start_segment(remote_label, target="remote")
+    try:
+        while True:
+            try:
+                msg_type, _ = session.next_control_event(timeout=0.5)
+            except queue.Empty:
+                LOGGER.debug("No TURN_PASS yet; retrying")
+                continue
+            if msg_type == ControlMessageType.TURN_PASS:
+                LOGGER.debug("TURN_PASS received")
+                return
+    finally:
+        if remote_label:
+            LOGGER.debug("Stopping remote segment %s", remote_label)
+            session.stop_segment(target="remote")
 
 
 def set_mode(session: ConversationSession, *, speaking: bool) -> None:
@@ -96,7 +105,7 @@ def set_mode(session: ConversationSession, *, speaking: bool) -> None:
 def speak_segment(session: ConversationSession, label: str, duration: float, run_clock: float) -> None:
     LOGGER.debug("Starting segment %s duration=%.2f run_clock=%.2f", label, duration, run_clock)
     set_mode(session, speaking=True)
-    session.start_segment(label)
+    session.start_segment(label, target="local")
     print(f"[{session.config.role}] Speak now ({duration:.1f}s). Press Enter to pass early.")
     start = time.monotonic()
     while True:
@@ -107,7 +116,7 @@ def speak_segment(session: ConversationSession, label: str, duration: float, run
             time.sleep(remaining)
             break
         time.sleep(0.5)
-    session.stop_segment()
+    session.stop_segment(target="local")
     phase_clock = time.monotonic() - start
     LOGGER.debug("Passing turn after segment %s phase_clock=%.2f", label, phase_clock)
     session.pass_turn(run_time=run_clock, phase_time=phase_clock)
@@ -133,28 +142,32 @@ def main() -> None:
         has_control = args.speaker_order == "first"
         set_mode(session, speaking=has_control)
         turn_labels = [f"{args.segment_label}_turn1", f"{args.segment_label}_turn2"]
+        remote_queue = deque(turn_labels)
 
         for label in turn_labels:
             if not has_control:
                 print(f"[{args.role}] Waiting for partner...")
                 set_mode(session, speaking=False)
-                wait_for_turn(session)
+                remote_label = remote_queue.popleft() if remote_queue else None
+                wait_for_turn(session, remote_label=remote_label)
                 has_control = True
 
             speak_segment(session, label, args.turn_duration, time.monotonic() - run_start)
             has_control = False
 
+        if remote_queue:
+            print(f"[{args.role}] Waiting for partner...")
+            set_mode(session, speaking=False)
+            remote_label = remote_queue.popleft()
+            wait_for_turn(session, remote_label=remote_label)
+
         set_mode(session, speaking=False)
-
-        if args.speaker_order == "first":
-            print(f"[{args.role}] Waiting for partner to finish...")
-            wait_for_turn(session)
-
-        export_dir = Path(args.record_dir) / "segments"
-        segments = session.export_segments(export_dir)
-        print(f"[{args.role}] Segments exported to {export_dir} => {segments}")
     finally:
         session.close()
+
+    export_dir = Path(args.record_dir) / "segments"
+    segments = session.export_segments(export_dir)
+    print(f"[{args.role}] Segments exported to {export_dir} => {segments}")
 
 
 if __name__ == "__main__":  # pragma: no cover
