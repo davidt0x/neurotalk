@@ -4,8 +4,12 @@ import time
 
 import numpy as np
 
-import neurotalk.audio as audio_module
-from neurotalk.audio import AudioConfig, AudioInputWorker, AudioOutputWorker, AudioPacket
+from neurotalk.audio import (
+    AudioConfig,
+    AudioInputWorker,
+    AudioOutputWorker,
+    AudioPacket,
+)
 
 
 class RecordingStub:
@@ -117,7 +121,9 @@ def test_audio_input_worker_emits_packets():
 
     recorder = RecordingStub()
     factory = FakeStreamFactory()
-    worker = AudioInputWorker(AudioConfig(), on_packet, recorder=recorder, stream_factory=factory)
+    worker = AudioInputWorker(
+        AudioConfig(), on_packet, recorder=recorder, stream_factory=factory
+    )
     worker.start()
 
     assert factory.input_stream is not None
@@ -140,7 +146,9 @@ def test_audio_input_worker_respects_transmit_toggle():
     def on_packet(packet: AudioPacket) -> None:
         packets.append(packet)
 
-    worker = AudioInputWorker(AudioConfig(), on_packet, stream_factory=FakeStreamFactory())
+    worker = AudioInputWorker(
+        AudioConfig(), on_packet, stream_factory=FakeStreamFactory()
+    )
     worker.enable_transmit(False)
     array = np.frombuffer(b"\x01\x00", dtype=np.int16).reshape(1, 1)
     worker._callback(array, 1, None, 0)
@@ -149,7 +157,12 @@ def test_audio_input_worker_respects_transmit_toggle():
 
 def test_audio_input_worker_records_errors():
     """Recorder failures bubble into `last_error` and trigger abort flags."""
-    worker = AudioInputWorker(AudioConfig(), lambda packet: None, recorder=ErrorRecorder(), stream_factory=FakeStreamFactory())
+    worker = AudioInputWorker(
+        AudioConfig(),
+        lambda packet: None,
+        recorder=ErrorRecorder(),
+        stream_factory=FakeStreamFactory(),
+    )
     array = np.frombuffer(b"\x00\x00", dtype=np.int16).reshape(1, 1)
     worker._callback(array, 1, None, 0)
     assert isinstance(worker.last_error, RuntimeError)

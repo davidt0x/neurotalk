@@ -16,7 +16,9 @@ def frames_for(data: bytes, *, channels: int, sample_width: int) -> int:
 
 
 def test_wav_recorder_writes_file(tmp_path):
-    target = RecorderTarget(path=tmp_path / "test.wav", channels=1, sample_rate_hz=16000)
+    target = RecorderTarget(
+        path=tmp_path / "test.wav", channels=1, sample_rate_hz=16000
+    )
     recorder = WavRecorder(target)
     packet = make_packet(b"\x01\x02" * 10)
     recorder.write(packet)
@@ -30,7 +32,9 @@ def test_wav_recorder_writes_file(tmp_path):
 
 
 def test_wav_recorder_segments_and_times(tmp_path):
-    target = RecorderTarget(path=tmp_path / "test.wav", channels=1, sample_rate_hz=16000)
+    target = RecorderTarget(
+        path=tmp_path / "test.wav", channels=1, sample_rate_hz=16000
+    )
     recorder = WavRecorder(target)
 
     before = b"\x00\x00" * 8
@@ -43,8 +47,12 @@ def test_wav_recorder_segments_and_times(tmp_path):
     recorder.close()
 
     segment = recorder.segments[0]
-    frames_before = frames_for(before, channels=target.channels, sample_width=target.sample_width_bytes)
-    frames_segment = frames_for(seg_data, channels=target.channels, sample_width=target.sample_width_bytes)
+    frames_before = frames_for(
+        before, channels=target.channels, sample_width=target.sample_width_bytes
+    )
+    frames_segment = frames_for(
+        seg_data, channels=target.channels, sample_width=target.sample_width_bytes
+    )
 
     assert segment.label == "turn1"
     assert segment.start_frame == frames_before
@@ -54,7 +62,9 @@ def test_wav_recorder_segments_and_times(tmp_path):
 
 
 def test_wav_recorder_split_segments(tmp_path):
-    target = RecorderTarget(path=tmp_path / "full.wav", channels=1, sample_rate_hz=16000)
+    target = RecorderTarget(
+        path=tmp_path / "full.wav", channels=1, sample_rate_hz=16000
+    )
     recorder = WavRecorder(target)
 
     recorder.start_segment("seg0")

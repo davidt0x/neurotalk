@@ -6,7 +6,6 @@ from pathlib import Path
 
 import numpy as np
 
-from neurotalk.audio import AudioPacket
 from neurotalk.config import AudioConfig, NetworkConfig, RecordingConfig, SessionConfig
 from neurotalk.control import ControlMessageType
 from neurotalk.session import ConversationSession
@@ -81,7 +80,12 @@ class FakeStreamFactory:
         pass
 
 
-def build_config(base_ports: tuple[int, int, int], remote_ports: tuple[int, int, int], nat_role: int, tmp_path: Path) -> SessionConfig:
+def build_config(
+    base_ports: tuple[int, int, int],
+    remote_ports: tuple[int, int, int],
+    nat_role: int,
+    tmp_path: Path,
+) -> SessionConfig:
     network = NetworkConfig(
         local_ports=base_ports,
         remote_hint=("127.0.0.1", *remote_ports),
@@ -91,10 +95,18 @@ def build_config(base_ports: tuple[int, int, int], remote_ports: tuple[int, int,
     )
     audio = AudioConfig(chunk_frames=128)
     recording = RecordingConfig(directory=tmp_path)
-    return SessionConfig(participant_id="001" if nat_role == 1 else "002", role="A" if nat_role == 1 else "B", network=network, audio=audio, recording=recording)
+    return SessionConfig(
+        participant_id="001" if nat_role == 1 else "002",
+        role="A" if nat_role == 1 else "B",
+        network=network,
+        audio=audio,
+        recording=recording,
+    )
 
 
-def connect_pair(session_a: ConversationSession, session_b: ConversationSession) -> None:
+def connect_pair(
+    session_a: ConversationSession, session_b: ConversationSession
+) -> None:
     thread_a = threading.Thread(target=session_a.connect)
     thread_b = threading.Thread(target=session_b.connect)
     thread_a.start()
@@ -128,7 +140,6 @@ def test_end_to_end(tmp_path):
     connect_pair(session_a, session_b)
 
     try:
-
         factory_a = session_a.state.stream_factory
         factory_b = session_b.state.stream_factory
         assert isinstance(factory_a, FakeStreamFactory)
@@ -176,4 +187,4 @@ def test_end_to_end(tmp_path):
         teardown_session(session_a)
         teardown_session(session_b)
         segments = session_a.export_segments(tmp_path / "segments")
-        assert "local" in segments and segments["local"]
+        assert segments.get("local")

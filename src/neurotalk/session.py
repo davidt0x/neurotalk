@@ -12,26 +12,37 @@ import queue
 import struct
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, Optional, Tuple, Dict, List
 
 logger = logging.getLogger(__name__)
 
+from .audio import (
+    AudioInputWorker,
+    AudioOutputWorker,
+    AudioPacket,
+    SoundDeviceStreamFactory,
+    StreamFactory,
+)
 from .config import SessionConfig
 from .control import (
-    ControlMessageType,
-    TurnPassPayload,
     DEBUG_READY,
     DEBUG_STOP,
     THANKS,
+    ControlMessageType,
+    TurnPassPayload,
     classify_payload,
 )
-from .network import NetworkConfig, SocketBundle, configure_nonblocking, hole_punch, open_sockets
-from .audio import AudioInputWorker, AudioOutputWorker, SoundDeviceStreamFactory, StreamFactory, AudioPacket
+from .network import (
+    NetworkConfig,
+    SocketBundle,
+    configure_nonblocking,
+    hole_punch,
+    open_sockets,
+)
 from .records import RecorderTarget, WavRecorder
-
 
 ControlHandler = Callable[[ControlMessageType, object | None], None]
 
@@ -40,17 +51,17 @@ ControlHandler = Callable[[ControlMessageType, object | None], None]
 class SessionState:
     """Mutable state tracked across the lifetime of a session."""
 
-    sockets: Optional[SocketBundle] = None
-    start_time_common: Optional[float] = None
+    sockets: SocketBundle | None = None
+    start_time_common: float | None = None
     transmit_enabled: bool = True
     receive_enabled: bool = True
-    input_worker: Optional[AudioInputWorker] = None
-    output_worker: Optional[AudioOutputWorker] = None
-    stream_factory: Optional[StreamFactory] = None
-    receiver_thread: Optional[threading.Thread] = None
-    receiver_running: Optional[threading.Event] = None
-    local_recorder: Optional[WavRecorder] = None
-    remote_recorder: Optional[WavRecorder] = None
+    input_worker: AudioInputWorker | None = None
+    output_worker: AudioOutputWorker | None = None
+    stream_factory: StreamFactory | None = None
+    receiver_thread: threading.Thread | None = None
+    receiver_running: threading.Event | None = None
+    local_recorder: WavRecorder | None = None
+    remote_recorder: WavRecorder | None = None
     owns_stream_factory: bool = False
 
 
@@ -74,19 +85,21 @@ class ConversationSession:
         self,
         config: SessionConfig,
         *,
-        control_handler: Optional[ControlHandler] = None,
-        stream_factory: Optional[StreamFactory] = None,
+        control_handler: ControlHandler | None = None,
+        stream_factory: StreamFactory | None = None,
     ):
         self.config = config
         self.state = SessionState()
         self._control_handler = control_handler
-        self._control_thread: Optional[threading.Thread] = None
+        self._control_thread: threading.Thread | None = None
         self._control_running = threading.Event()
-        self._control_queue: "queue.Queue[tuple[ControlMessageType, object | None]]" = queue.Queue()
+        self._control_queue: queue.Queue[tuple[ControlMessageType, object | None]] = (
+            queue.Queue()
+        )
         self._stream_factory_override = stream_factory
 
     # ---- context manager -------------------------------------------------
-    def __enter__(self) -> "ConversationSession":
+    def __enter__(self) -> ConversationSession:
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
@@ -134,7 +147,9 @@ class ConversationSession:
         if self._control_thread and self._control_thread.is_alive():
             return
         self._control_running.set()
-        self._control_thread = threading.Thread(target=self._control_loop, name="NeuroTalkControl", daemon=True)
+        self._control_thread = threading.Thread(
+            target=self._control_loop, name="NeuroTalkControl", daemon=True
+        )
         self._control_thread.start()
         logger.debug("control loop thread started")
 
@@ -166,7 +181,9 @@ class ConversationSession:
             try:
                 msg_type, payload = classify_payload(data)
             except ValueError:
-                logger.debug("control_loop failed to classify payload len=%s", len(data))
+                logger.debug(
+                    "control_loop failed to classify payload len=%s", len(data)
+                )
                 continue
             logger.debug("control_loop received %s", msg_type)
             self._control_queue.put((msg_type, payload))
@@ -175,7 +192,9 @@ class ConversationSession:
         logger.debug("control_loop exiting")
 
     # ---- control helpers -------------------------------------------------
-    def next_control_event(self, timeout: Optional[float] = None) -> tuple[ControlMessageType, object | None]:
+    def next_control_event(
+        self, timeout: float | None = None
+    ) -> tuple[ControlMessageType, object | None]:
         """
         Block until the next control event arrives (or timeout occurs).
         """
@@ -203,7 +222,9 @@ class ConversationSession:
             logger.debug("send_turn_pass send failed: %s", exc, exc_info=exc)
             raise
 
-    def pass_turn(self, *, run_time: float, phase_time: float, wall_time: Optional[float] = None) -> None:
+    def pass_turn(
+        self, *, run_time: float, phase_time: float, wall_time: float | None = None
+    ) -> None:
         """Notify the remote peer that control has been passed to them."""
 
         now = wall_time if wall_time is not None else time.time()
@@ -214,7 +235,7 @@ class ConversationSession:
         self,
         label: str,
         *,
-        metadata: Optional[dict[str, object]] = None,
+        metadata: dict[str, object] | None = None,
         target: str | tuple[str, ...] = "both",
     ) -> None:
         """Begin a labeled segment for the requested recording targets."""
@@ -246,7 +267,11 @@ class ConversationSession:
             raise ValueError(f"Unknown segment target(s): {sorted(invalid)}")
         return target_set
 
-    def export_segments(self, destination: Optional[Path] = None, pattern: str = "{role}_{index:02d}_{label}.wav") -> Dict[str, List[Path]]:
+    def export_segments(
+        self,
+        destination: Path | None = None,
+        pattern: str = "{role}_{index:02d}_{label}.wav",
+    ) -> dict[str, list[Path]]:
         """Write per-segment WAV files for local and remote recordings.
 
         Parameters
@@ -262,8 +287,11 @@ class ConversationSession:
             destination = self.config.recording.directory / "segments"
         destination.mkdir(parents=True, exist_ok=True)
 
-        results: Dict[str, List[Path]] = {}
-        for role, recorder in (("local", self.state.local_recorder), ("remote", self.state.remote_recorder)):
+        results: dict[str, list[Path]] = {}
+        for role, recorder in (
+            ("local", self.state.local_recorder),
+            ("remote", self.state.remote_recorder),
+        ):
             if recorder and recorder.segments:
                 recorder.stop_segment()
                 if not getattr(recorder, "_closed", False):
@@ -324,9 +352,9 @@ class ConversationSession:
         self,
         *,
         ready_timeout: float = 5.0,
-        duration: Optional[float] = None,
+        duration: float | None = None,
         poll_interval: float = 0.5,
-        on_ready: Optional[Callable[[], None]] = None,
+        on_ready: Callable[[], None] | None = None,
     ) -> None:
         """Coordinate a pre-experiment debug window with the remote partner.
 
@@ -351,7 +379,9 @@ class ConversationSession:
         partner_requested_stop = False
         deadline = time.time() + ready_timeout
 
-        while time.time() < deadline and not partner_ready and not partner_requested_stop:
+        while (
+            time.time() < deadline and not partner_ready and not partner_requested_stop
+        ):
             try:
                 msg_type, _ = self.next_control_event(timeout=poll_interval)
             except queue.Empty:
@@ -395,7 +425,9 @@ class ConversationSession:
                     break
 
         # Ensure the control loop remains active after debug negotiations.
-        if not self._control_running.is_set() or not (self._control_thread and self._control_thread.is_alive()):
+        if not self._control_running.is_set() or not (
+            self._control_thread and self._control_thread.is_alive()
+        ):
             self._start_control_loop()
 
     # ---- audio helpers --------------------------------------------------
@@ -416,14 +448,23 @@ class ConversationSession:
             self.state.owns_stream_factory = owns_factory
 
         local_recorder, remote_recorder = self._create_recorders()
-        logger.debug("recorders created local=%s remote=%s", local_recorder, remote_recorder)
+        logger.debug(
+            "recorders created local=%s remote=%s", local_recorder, remote_recorder
+        )
         self.state.local_recorder = local_recorder
         self.state.remote_recorder = remote_recorder
 
         logger.debug("initializing audio workers")
 
-        output_worker = AudioOutputWorker(audio_cfg, recorder=remote_recorder, stream_factory=factory)
-        input_worker = AudioInputWorker(audio_cfg, self._handle_outbound_packet, recorder=local_recorder, stream_factory=factory)
+        output_worker = AudioOutputWorker(
+            audio_cfg, recorder=remote_recorder, stream_factory=factory
+        )
+        input_worker = AudioInputWorker(
+            audio_cfg,
+            self._handle_outbound_packet,
+            recorder=local_recorder,
+            stream_factory=factory,
+        )
 
         output_worker.enable_playback(self.state.receive_enabled)
         input_worker.enable_transmit(self.state.transmit_enabled)
@@ -437,7 +478,9 @@ class ConversationSession:
         receiver_running = threading.Event()
         receiver_running.set()
         self.state.receiver_running = receiver_running
-        receiver_thread = threading.Thread(target=self._receive_audio_loop, name="NeuroTalkAudioRecv", daemon=True)
+        receiver_thread = threading.Thread(
+            target=self._receive_audio_loop, name="NeuroTalkAudioRecv", daemon=True
+        )
         self.state.receiver_thread = receiver_thread
         receiver_thread.start()
         logger.debug("audio receiver thread launched")
@@ -477,7 +520,9 @@ class ConversationSession:
                 break
             packet = self._decode_packet(data)
             if packet is None:
-                logger.debug("_receive_audio_loop dropped undecodable payload len=%s", len(data))
+                logger.debug(
+                    "_receive_audio_loop dropped undecodable payload len=%s", len(data)
+                )
                 continue
             output = self.state.output_worker
             if output:
@@ -486,9 +531,13 @@ class ConversationSession:
                 logger.debug("_receive_audio_loop missing output worker for packet")
 
     def _encode_packet(self, packet: AudioPacket) -> bytes:
-        return packet.pcm + struct.pack("<l", packet.counter) + struct.pack("<d", packet.timestamp)
+        return (
+            packet.pcm
+            + struct.pack("<l", packet.counter)
+            + struct.pack("<d", packet.timestamp)
+        )
 
-    def _decode_packet(self, payload: bytes) -> Optional[AudioPacket]:
+    def _decode_packet(self, payload: bytes) -> AudioPacket | None:
         if len(payload) < 12:
             return None
         counter = struct.unpack("<l", payload[-12:-8])[0]
@@ -518,7 +567,9 @@ class ConversationSession:
                 try:
                     self.state.stream_factory.terminate()
                 except Exception as exc:
-                    logger.debug("Stream factory termination failed: %s", exc, exc_info=exc)
+                    logger.debug(
+                        "Stream factory termination failed: %s", exc, exc_info=exc
+                    )
             self.state.stream_factory = None
             self.state.owns_stream_factory = False
 
@@ -531,7 +582,7 @@ class ConversationSession:
             if not getattr(self.state.remote_recorder, "_closed", False):
                 self.state.remote_recorder.close()
 
-    def _create_recorders(self) -> Tuple[Optional[WavRecorder], Optional[WavRecorder]]:
+    def _create_recorders(self) -> tuple[WavRecorder | None, WavRecorder | None]:
         recording_cfg = self.config.recording
         directory: Path = recording_cfg.directory
         directory.mkdir(parents=True, exist_ok=True)
@@ -545,13 +596,17 @@ class ConversationSession:
         if local_path is None:
             local_path = directory / f"{base_name}_local.wav"
         else:
-            local_path = local_path if local_path.is_absolute() else directory / local_path
+            local_path = (
+                local_path if local_path.is_absolute() else directory / local_path
+            )
 
         remote_path = recording_cfg.remote_track
         if remote_path is None:
             remote_path = directory / f"{base_name}_remote.wav"
         else:
-            remote_path = remote_path if remote_path.is_absolute() else directory / remote_path
+            remote_path = (
+                remote_path if remote_path.is_absolute() else directory / remote_path
+            )
 
         local_target = RecorderTarget(
             path=local_path,

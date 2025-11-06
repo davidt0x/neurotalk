@@ -10,8 +10,8 @@ from __future__ import annotations
 import socket
 import subprocess
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable, Optional, Tuple
 
 from .config import NetworkConfig
 from .control import HANDSHAKE_HELLO, HANDSHAKE_HI_PARTNER, HANDSHAKE_READY
@@ -28,7 +28,7 @@ class SocketBundle:
     inbound: socket.socket
     outbound: socket.socket
     control: socket.socket
-    remote: Tuple[str, int, int, int]
+    remote: tuple[str, int, int, int]
 
     def close(self) -> None:
         for sock in (self.inbound, self.outbound, self.control):
@@ -93,7 +93,9 @@ def open_sockets(config: NetworkConfig) -> SocketBundle:
     )
 
 
-def hole_punch(bundle: SocketBundle, config: NetworkConfig) -> Tuple[str, int, int, int]:
+def hole_punch(
+    bundle: SocketBundle, config: NetworkConfig
+) -> tuple[str, int, int, int]:
     """
     Perform UDP hole punching to learn the partner's reachable ports.
 
@@ -115,7 +117,7 @@ def hole_punch(bundle: SocketBundle, config: NetworkConfig) -> Tuple[str, int, i
                 incoming_in, addr_in = bundle.inbound.recvfrom(1024)
                 incoming_out, addr_out = bundle.outbound.recvfrom(1024)
                 incoming_ctrl, addr_ctrl = bundle.control.recvfrom(1024)
-            except socket.timeout:
+            except TimeoutError:
                 continue
             if incoming_in in (HANDSHAKE_HELLO, HANDSHAKE_HI_PARTNER) and (
                 incoming_out == incoming_in and incoming_ctrl == incoming_in
@@ -137,9 +139,12 @@ def hole_punch(bundle: SocketBundle, config: NetworkConfig) -> Tuple[str, int, i
             bundle.control.sendto(handshake_token, (remote_ip, port_comm))
             try:
                 incoming_ctrl, addr_ctrl = bundle.control.recvfrom(1024)
-                if addr_ctrl[0] == remote_ip and incoming_ctrl in (handshake_token, HANDSHAKE_READY):
+                if addr_ctrl[0] == remote_ip and incoming_ctrl in (
+                    handshake_token,
+                    HANDSHAKE_READY,
+                ):
                     break
-            except socket.timeout:
+            except TimeoutError:
                 continue
         else:
             raise NetworkError("Handshake confirmation never arrived")
@@ -155,7 +160,7 @@ def hole_punch(bundle: SocketBundle, config: NetworkConfig) -> Tuple[str, int, i
                 incoming_in, addr_in = bundle.inbound.recvfrom(1024)
                 incoming_out, addr_out = bundle.outbound.recvfrom(1024)
                 incoming_ctrl, addr_ctrl = bundle.control.recvfrom(1024)
-            except socket.timeout:
+            except TimeoutError:
                 continue
             if incoming_in in (HANDSHAKE_HI_PARTNER, HANDSHAKE_HELLO) and (
                 incoming_out == incoming_in and incoming_ctrl == incoming_in
@@ -199,7 +204,7 @@ def flush_pending(bundle: SocketBundle, duration: float = 1.0) -> None:
         for sock in sockets:
             try:
                 sock.recv(1024)
-            except socket.timeout:
+            except TimeoutError:
                 continue
             except BlockingIOError:
                 continue

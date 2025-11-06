@@ -11,15 +11,15 @@ import logging
 import queue
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable, Optional, Protocol
+from typing import Protocol
 
 import numpy as np
+import sounddevice as sd
 
 from .config import AudioConfig
 from .records import Recorder
-
-import sounddevice as sd
 
 
 class InputStream(Protocol):
@@ -37,8 +37,12 @@ class OutputStream(Protocol):
 
 
 class StreamFactory(Protocol):
-    def open_input_stream(self, config: AudioConfig, callback: Callable[..., None]) -> InputStream: ...
-    def open_output_stream(self, config: AudioConfig, callback: Callable[..., None]) -> OutputStream: ...
+    def open_input_stream(
+        self, config: AudioConfig, callback: Callable[..., None]
+    ) -> InputStream: ...
+    def open_output_stream(
+        self, config: AudioConfig, callback: Callable[..., None]
+    ) -> OutputStream: ...
     def terminate(self) -> None: ...
 
 
@@ -98,7 +102,9 @@ class SoundDeviceOutputStream:
 
 
 class SoundDeviceStreamFactory:
-    def open_input_stream(self, config: AudioConfig, callback: Callable[..., None]) -> InputStream:
+    def open_input_stream(
+        self, config: AudioConfig, callback: Callable[..., None]
+    ) -> InputStream:
         stream = sd.InputStream(
             samplerate=config.sample_rate_hz,
             channels=config.channels,
@@ -108,7 +114,9 @@ class SoundDeviceStreamFactory:
         )
         return SoundDeviceInputStream(stream)
 
-    def open_output_stream(self, config: AudioConfig, callback: Callable[..., None]) -> OutputStream:
+    def open_output_stream(
+        self, config: AudioConfig, callback: Callable[..., None]
+    ) -> OutputStream:
         stream = sd.OutputStream(
             samplerate=config.sample_rate_hz,
             channels=config.channels,
@@ -128,23 +136,23 @@ class AudioInputWorker:
         self,
         config: AudioConfig,
         on_packet: PacketCallback,
-        recorder: Optional[Recorder] = None,
-        stream_factory: Optional[StreamFactory] = None,
+        recorder: Recorder | None = None,
+        stream_factory: StreamFactory | None = None,
     ) -> None:
         self.config = config
         self._on_packet = on_packet
         self._recorder = recorder
         self._factory = stream_factory or SoundDeviceStreamFactory()
         self._owns_factory = stream_factory is None
-        self._stream: Optional[InputStream] = None
-        self._thread: Optional[threading.Thread] = None
+        self._stream: InputStream | None = None
+        self._thread: threading.Thread | None = None
         self._running = threading.Event()
         self._transmit_enabled = True
         self._counter = 0
-        self._last_error: Optional[Exception] = None
+        self._last_error: Exception | None = None
 
     @property
-    def last_error(self) -> Optional[Exception]:
+    def last_error(self) -> Exception | None:
         return self._last_error
 
     def enable_transmit(self, enabled: bool) -> None:
@@ -156,7 +164,9 @@ class AudioInputWorker:
         if not self._stream:
             self._stream = self._factory.open_input_stream(self.config, self._callback)
         self._running.set()
-        self._thread = threading.Thread(target=self._loop, name="AudioInputWorker", daemon=True)
+        self._thread = threading.Thread(
+            target=self._loop, name="AudioInputWorker", daemon=True
+        )
         self._thread.start()
 
     def stop(self) -> None:
@@ -165,7 +175,9 @@ class AudioInputWorker:
             try:
                 self._stream.stop_stream()
             except Exception as exc:  # pragma: no cover
-                logging.debug("AudioInputWorker.stop_stream failed: %s", exc, exc_info=exc)
+                logging.debug(
+                    "AudioInputWorker.stop_stream failed: %s", exc, exc_info=exc
+                )
         if self._thread:
             self._thread.join(timeout=2.0)
             self._thread = None
@@ -182,7 +194,11 @@ class AudioInputWorker:
                 try:
                     self._stream.stop_stream()
                 except Exception as exc:  # pragma: no cover
-                    logging.debug("AudioInputWorker loop stop_stream failed: %s", exc, exc_info=exc)
+                    logging.debug(
+                        "AudioInputWorker loop stop_stream failed: %s",
+                        exc,
+                        exc_info=exc,
+                    )
 
     def _callback(self, in_data, frame_count, time_info, status_flags) -> None:
         if status_flags:
@@ -218,22 +234,22 @@ class AudioOutputWorker:
     def __init__(
         self,
         config: AudioConfig,
-        recorder: Optional[Recorder] = None,
-        stream_factory: Optional[StreamFactory] = None,
+        recorder: Recorder | None = None,
+        stream_factory: StreamFactory | None = None,
     ) -> None:
         self.config = config
         self._recorder = recorder
         self._factory = stream_factory or SoundDeviceStreamFactory()
         self._owns_factory = stream_factory is None
-        self._stream: Optional[OutputStream] = None
+        self._stream: OutputStream | None = None
         self._running = threading.Event()
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
         self._queue: queue.Queue[AudioPacket] = queue.Queue()
         self._playback_enabled = True
         self._silence = self._silence_bytes(config.chunk_frames)
         self._last_chunk = self._silence
         self._counter = 0
-        self._last_error: Optional[Exception] = None
+        self._last_error: Exception | None = None
 
     def _silence_bytes(self, frames: int) -> bytes:
         array = np.zeros((frames, self.config.channels), dtype=np.int16)
@@ -255,7 +271,9 @@ class AudioOutputWorker:
         if not self._stream:
             self._stream = self._factory.open_output_stream(self.config, self._callback)
         self._running.set()
-        self._thread = threading.Thread(target=self._loop, name="AudioOutputWorker", daemon=True)
+        self._thread = threading.Thread(
+            target=self._loop, name="AudioOutputWorker", daemon=True
+        )
         self._thread.start()
 
     def stop(self) -> None:
@@ -264,7 +282,9 @@ class AudioOutputWorker:
             try:
                 self._stream.stop_stream()
             except Exception as exc:  # pragma: no cover
-                logging.debug("AudioOutputWorker.stop_stream failed: %s", exc, exc_info=exc)
+                logging.debug(
+                    "AudioOutputWorker.stop_stream failed: %s", exc, exc_info=exc
+                )
         if self._thread:
             self._thread.join(timeout=2.0)
             self._thread = None
@@ -281,7 +301,11 @@ class AudioOutputWorker:
                 try:
                     self._stream.stop_stream()
                 except Exception as exc:  # pragma: no cover
-                    logging.debug("AudioOutputWorker loop stop_stream failed: %s", exc, exc_info=exc)
+                    logging.debug(
+                        "AudioOutputWorker loop stop_stream failed: %s",
+                        exc,
+                        exc_info=exc,
+                    )
 
     def _callback(self, out_data, frame_count, time_info, status_flags) -> None:
         if status_flags:
@@ -307,7 +331,9 @@ class AudioOutputWorker:
         if not self._playback_enabled:
             playback = self._silence_bytes(frame_count)
 
-        array = np.frombuffer(playback, dtype=np.int16).reshape(frame_count, self.config.channels)
+        array = np.frombuffer(playback, dtype=np.int16).reshape(
+            frame_count, self.config.channels
+        )
         out_data[:] = array
 
     def _normalize(self, data: bytes, frames: int) -> bytes:
@@ -331,5 +357,5 @@ class AudioOutputWorker:
             self._factory.terminate()
 
     @property
-    def last_error(self) -> Optional[Exception]:
+    def last_error(self) -> Exception | None:
         return self._last_error

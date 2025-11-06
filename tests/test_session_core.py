@@ -7,7 +7,7 @@ import time
 
 import pytest
 
-from neurotalk.config import SessionConfig, NetworkConfig
+from neurotalk.config import NetworkConfig, SessionConfig
 from neurotalk.control import SYNC_REQUEST, SyncTimestamp
 from neurotalk.network import SocketBundle
 from neurotalk.session import ConversationSession
@@ -32,11 +32,18 @@ def test_sync_start_roundtrip(monkeypatch):
         inbound=inbound_local,
         outbound=outbound_local,
         control=control_local,
-        remote=("127.0.0.1", inbound_local.getsockname()[1], outbound_local.getsockname()[1], control_remote.getsockname()[1]),
+        remote=(
+            "127.0.0.1",
+            inbound_local.getsockname()[1],
+            outbound_local.getsockname()[1],
+            control_remote.getsockname()[1],
+        ),
     )
 
     # Setup session with the preconstructed sockets (skip connect()).
-    config = SessionConfig(participant_id="001", role="A", network=NetworkConfig(punch_timeout_s=5.0))
+    config = SessionConfig(
+        participant_id="001", role="A", network=NetworkConfig(punch_timeout_s=5.0)
+    )
     session = ConversationSession(config)
     session.state.sockets = bundle
     session._start_control_loop()
@@ -49,7 +56,7 @@ def test_sync_start_roundtrip(monkeypatch):
         while not barrier.is_set():
             try:
                 data, addr = control_remote.recvfrom(1024)
-            except socket.timeout:
+            except TimeoutError:
                 continue
             if data == SYNC_REQUEST:
                 received_sync_requests.put(time.time())

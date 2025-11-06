@@ -7,8 +7,6 @@ import pytest
 
 from neurotalk.config import NetworkConfig
 from neurotalk.network import (
-    NetworkError,
-    SocketBundle,
     configure_nonblocking,
     flush_pending,
     hole_punch,

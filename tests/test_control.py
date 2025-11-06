@@ -3,18 +3,18 @@ from __future__ import annotations
 import pytest
 
 from neurotalk.control import (
-    ControlMessageType,
-    SyncTimestamp,
-    TurnPassPayload,
-    classify_payload,
+    DEBUG_READY,
+    DEBUG_STOP,
+    ESCAPE,
     HANDSHAKE_HELLO,
     HANDSHAKE_HI_PARTNER,
     HANDSHAKE_READY,
     SYNC_REQUEST,
-    ESCAPE,
     THANKS,
-    DEBUG_READY,
-    DEBUG_STOP,
+    ControlMessageType,
+    SyncTimestamp,
+    TurnPassPayload,
+    classify_payload,
 )
 
 

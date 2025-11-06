@@ -11,9 +11,10 @@ from __future__ import annotations
 
 import contextlib
 import wave
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable, Optional, Protocol, Sequence, List, TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:  # pragma: no cover
     from .audio import AudioPacket
@@ -32,11 +33,10 @@ class RecorderTarget:
 class Recorder(Protocol):
     """Protocol for classes that can persist audio packets."""
 
-    def write(self, packet: "AudioPacket") -> None:
-        ...
+    def write(self, packet: AudioPacket) -> None: ...
 
-    def close(self) -> None:
-        ...
+    def close(self) -> None: ...
+
 
 @dataclass
 class SegmentMarker:
@@ -46,9 +46,9 @@ class SegmentMarker:
 
     label: str
     start_time: float
-    end_time: Optional[float] = None
-    start_frame: Optional[int] = None
-    end_frame: Optional[int] = None
+    end_time: float | None = None
+    start_frame: int | None = None
+    end_frame: int | None = None
     metadata: dict[str, object] = field(default_factory=dict)
 
 
@@ -59,9 +59,9 @@ class RecordingManifest:
     """
 
     base_dir: Path
-    local_track: Optional[Path] = None
-    remote_track: Optional[Path] = None
-    mix_track: Optional[Path] = None
+    local_track: Path | None = None
+    remote_track: Path | None = None
+    mix_track: Path | None = None
     segments: list[SegmentMarker] = field(default_factory=list)
 
     def add_segment(self, marker: SegmentMarker) -> None:
@@ -75,7 +75,9 @@ class TelemetryReporter:
     Concrete implementation might print to console or stream structured logs.
     """
 
-    def report(self, *, packets_sent: int, packets_received: int, buffer_fill: int) -> None:
+    def report(
+        self, *, packets_sent: int, packets_received: int, buffer_fill: int
+    ) -> None:
         pass  # Placeholder for future monitoring hooks
 
 
@@ -93,14 +95,14 @@ class WavRecorder(Recorder):
         self._wave.setframerate(target.sample_rate_hz)
         self._frames_written = 0
         self._segments: list[SegmentMarker] = []
-        self._active_segment: Optional[int] = None
+        self._active_segment: int | None = None
         self._closed = False
 
     @property
     def segments(self) -> Sequence[SegmentMarker]:
         return tuple(self._segments)
 
-    def write(self, packet: "AudioPacket") -> None:
+    def write(self, packet: AudioPacket) -> None:
         if self._closed:
             raise RuntimeError("Recorder already closed")
         data = packet.pcm
@@ -108,7 +110,9 @@ class WavRecorder(Recorder):
         frames = len(data) // (self._target.channels * self._target.sample_width_bytes)
         self._frames_written += frames
 
-    def start_segment(self, label: str, *, metadata: Optional[dict[str, object]] = None) -> None:
+    def start_segment(
+        self, label: str, *, metadata: dict[str, object] | None = None
+    ) -> None:
         if self._active_segment is not None:
             raise RuntimeError("Segment already in progress")
         start_time = self._frames_written / self._target.sample_rate_hz
@@ -137,7 +141,9 @@ class WavRecorder(Recorder):
         self._wave.close()
         self._closed = True
 
-    def split_segments(self, destination: Path, pattern: str = "{index:02d}_{label}.wav") -> List[Path]:
+    def split_segments(
+        self, destination: Path, pattern: str = "{index:02d}_{label}.wav"
+    ) -> list[Path]:
         """
         Write per-segment WAV files to the destination directory.
 
@@ -148,7 +154,7 @@ class WavRecorder(Recorder):
             self.close()
 
         destination.mkdir(parents=True, exist_ok=True)
-        outputs: List[Path] = []
+        outputs: list[Path] = []
         with contextlib.closing(wave.open(str(self._target.path), "rb")) as source:
             for index, marker in enumerate(self._segments):
                 start_frame = marker.start_frame or 0

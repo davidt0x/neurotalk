@@ -3,9 +3,11 @@ from __future__ import annotations
 import socket
 import threading
 
-from neurotalk.config import SessionConfig, NetworkConfig
+from neurotalk.config import NetworkConfig, SessionConfig
 from neurotalk.network import SocketBundle
 from neurotalk.session import ConversationSession
+
+
 def test_run_debug_mode_handshake():
     inbound_a = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     outbound_a = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -49,8 +51,12 @@ def test_run_debug_mode_handshake():
         ),
     )
 
-    session_a = ConversationSession(SessionConfig(participant_id="001", role="A", network=NetworkConfig()))
-    session_b = ConversationSession(SessionConfig(participant_id="002", role="B", network=NetworkConfig()))
+    session_a = ConversationSession(
+        SessionConfig(participant_id="001", role="A", network=NetworkConfig())
+    )
+    session_b = ConversationSession(
+        SessionConfig(participant_id="002", role="B", network=NetworkConfig())
+    )
 
     session_a.state.sockets = bundle_a
     session_b.state.sockets = bundle_b

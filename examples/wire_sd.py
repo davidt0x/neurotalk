@@ -5,10 +5,12 @@ https://github.com/PortAudio/portaudio/blob/master/test/patest_wire.c
 
 """
 
+from __future__ import annotations
+
 import argparse
 
-import sounddevice as sd
 import numpy  # Make sure NumPy is loaded before it is used in the callback
+import sounddevice as sd
 
 assert numpy  # avoid "imported but unused" message (W0611)
 

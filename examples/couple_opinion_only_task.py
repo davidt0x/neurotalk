@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Solo Opinion Task (no passing).
 - Waits for TTL '=', brief blank, shows opinion prompt for OPINION_S seconds (or until submit key if set).
@@ -9,29 +8,37 @@ Solo Opinion Task (no passing).
   * data/<base>_OPIN_TTLtimestamps_<date>.csv (verbose TTL pings)
 """
 
-import os, time, argparse, re, csv
-from psychopy import visual, core, data, event, logging, monitors
+from __future__ import annotations
+
+import argparse
+import csv
+import os
+import re
+import time
+
+from psychopy import core, data, event, logging, monitors, visual
 
 # ---------- config ----------
-SCANNER       = None
-WIN_SIZE      = (1280, 800)
-FULLSCR       = False
-LETTER_H      = 0.07
-WRAP_W        = 2
+SCANNER = None
+WIN_SIZE = (1280, 800)
+FULLSCR = False
+LETTER_H = 0.07
+WRAP_W = 2
 
 INSTR_BLANK_S = 10.0
-OPINION_S     = 15.0
+OPINION_S = 15.0
 OPINION_PROMPT = "Please share your opinion on the problem area you just discussed:\n\n"
 
-KEY_SUBMIT  = None       # set to a key string if you want manual submit (e.g., 'return')
-KEY_QUIT    = 'escape'
-KEY_TRIGGER = 'space'
-TTL_KEY     = 'equal'
-TTL_ACCEPT  = {'equal', '='}
-TRIGGER_ACCEPT = {'space', KEY_TRIGGER}
+KEY_SUBMIT = None  # set to a key string if you want manual submit (e.g., 'return')
+KEY_QUIT = "escape"
+KEY_TRIGGER = "space"
+TTL_KEY = "equal"
+TTL_ACCEPT = {"equal", "="}
+TRIGGER_ACCEPT = {"space", KEY_TRIGGER}
 
-CSV_FILENAME   = "participant_counterbalancing.csv"
-SESSION_TYPE   = "couple"
+CSV_FILENAME = "participant_counterbalancing.csv"
+SESSION_TYPE = "couple"
+
 
 # ----------------- helpers (duplicated for standalone use) -----------------
 def decode_pid(pid_str: str):
@@ -42,14 +49,16 @@ def decode_pid(pid_str: str):
     person = pid_num % 10
     if person not in (1, 2) or dyad < 1:
         raise ValueError(f"Bad participant id: {pid_str}")
-    role = 'A' if person == 1 else 'B'
+    role = "A" if person == 1 else "B"
     return dyad, role
+
 
 def slug(x: str):
     x = (x or "").strip().lower()
     x = re.sub(r"\s+", "_", x)
     x = re.sub(r"[^a-z0-9_\-]", "", x)
     return x[:60] or "topic"
+
 
 def load_assignment_row(csv_path: str, pid: str):
     """
@@ -59,10 +68,16 @@ def load_assignment_row(csv_path: str, pid: str):
     """
     if not os.path.exists(csv_path):
         raise FileNotFoundError(f"Cannot find CSV: {csv_path}")
-    with open(csv_path, newline='', encoding='utf-8') as f:
+    with open(csv_path, newline="", encoding="utf-8") as f:
         rdr = csv.DictReader(f)
-        need = {"participant_id","condition",
-                "Neutral_session_1","Couple_session_1","Neutral_session_2","Couple_session_2"}
+        need = {
+            "participant_id",
+            "condition",
+            "Neutral_session_1",
+            "Couple_session_1",
+            "Neutral_session_2",
+            "Couple_session_2",
+        }
         if not need.issubset(set(rdr.fieldnames or [])):
             missing = need - set(rdr.fieldnames or [])
             raise ValueError(f"CSV is missing required columns: {sorted(missing)}")
@@ -71,36 +86,69 @@ def load_assignment_row(csv_path: str, pid: str):
                 return {
                     "participant_id": pid,
                     "condition": (row.get("condition") or "").strip(),
-                    "Neutral_session_1": (row.get("Neutral_session_1") or "").strip().upper(),
-                    "Couple_session_1":  (row.get("Couple_session_1")  or "").strip().upper(),
-                    "Neutral_session_2": (row.get("Neutral_session_2") or "").strip().upper(),
-                    "Couple_session_2":  (row.get("Couple_session_2")  or "").strip().upper(),
+                    "Neutral_session_1": (row.get("Neutral_session_1") or "")
+                    .strip()
+                    .upper(),
+                    "Couple_session_1": (row.get("Couple_session_1") or "")
+                    .strip()
+                    .upper(),
+                    "Neutral_session_2": (row.get("Neutral_session_2") or "")
+                    .strip()
+                    .upper(),
+                    "Couple_session_2": (row.get("Couple_session_2") or "")
+                    .strip()
+                    .upper(),
                 }
     raise KeyError(f"participant_id {pid} not found in {csv_path}")
+
 
 def pick_first_speaker(starters: dict, session: int):
     key = f"Couple_session_{session}"
     val = starters.get(key, "")
-    if val not in ("A","B"):
+    if val not in ("A", "B"):
         raise ValueError(f"Starter value for {key} must be 'A' or 'B', got: {val!r}")
     return val
 
+
 def make_monitor(scanner):
-    if scanner == 'skyra':
-        mon = monitors.Monitor('skyra'); mon.setSizePix((1920,1080)); mon.setWidth(64); mon.setDistance(89); mon.save()
-    elif scanner == 'prisma':
-        mon = monitors.Monitor('prisma'); mon.setSizePix((1920,1080)); mon.setWidth(56); mon.setDistance(107.5); mon.save()
+    if scanner == "skyra":
+        mon = monitors.Monitor("skyra")
+        mon.setSizePix((1920, 1080))
+        mon.setWidth(64)
+        mon.setDistance(89)
+        mon.save()
+    elif scanner == "prisma":
+        mon = monitors.Monitor("prisma")
+        mon.setSizePix((1920, 1080))
+        mon.setWidth(56)
+        mon.setDistance(107.5)
+        mon.save()
     else:
-        mon = monitors.Monitor('defaultLaptop')
+        mon = monitors.Monitor("defaultLaptop")
     return mon
 
-def log_ttl(fTTL, exp_condition, role_label, segment, run_clock, phase_clock,
-            conflict_text, first_speaker, role, session, dyad, SESSION_TYPE):
+
+def log_ttl(
+    fTTL,
+    exp_condition,
+    role_label,
+    segment,
+    run_clock,
+    phase_clock,
+    conflict_text,
+    first_speaker,
+    role,
+    session,
+    dyad,
+    SESSION_TYPE,
+):
     fTTL.write(
         f"{dyad},{session},{SESSION_TYPE},{exp_condition},{role_label},{segment},"
         f"{time.time()},{run_clock.getTime()},{'' if phase_clock is None else phase_clock.getTime()},"
         f"{conflict_text},{first_speaker},{role}\n"
-    ); fTTL.flush()
+    )
+    fTTL.flush()
+
 
 # ----------------------------------------------------
 def main(pid: str, session: int, conflict: str, csv_path: str):
@@ -115,9 +163,9 @@ def main(pid: str, session: int, conflict: str, csv_path: str):
     exp_condition = row["condition"]
     starters = {
         "Neutral_session_1": row["Neutral_session_1"],
-        "Couple_session_1":  row["Couple_session_1"],
+        "Couple_session_1": row["Couple_session_1"],
         "Neutral_session_2": row["Neutral_session_2"],
-        "Couple_session_2":  row["Couple_session_2"],
+        "Couple_session_2": row["Couple_session_2"],
     }
     first_speaker = pick_first_speaker(starters, session)
     conflict_text = conflict.strip()
@@ -129,72 +177,115 @@ def main(pid: str, session: int, conflict: str, csv_path: str):
 
     thisExp = data.ExperimentHandler(
         name="OPIN_min",
-        extraInfo={'session_type': SESSION_TYPE},
-        savePickle=True, saveWideText=True, dataFileName=filename
+        extraInfo={"session_type": SESSION_TYPE},
+        savePickle=True,
+        saveWideText=True,
+        dataFileName=filename,
     )
-    logging.LogFile(filename + '.log', level=logging.EXP)
+    logging.LogFile(filename + ".log", level=logging.EXP)
     logging.console.setLevel(logging.WARNING)
 
     timings_path = os.path.join("data", f"{base}_OPIN_TimingsLog_{date_str}.csv")
     fLog = open(timings_path, "w", newline="", encoding="utf-8")
-    fLog.write("dyad,session,session_type,exp_condition,role,time.time,run.time,comm.time,conflict_text,first_speaker,participant_role\n"); fLog.flush()
+    fLog.write(
+        "dyad,session,session_type,exp_condition,role,time.time,run.time,comm.time,conflict_text,first_speaker,participant_role\n"
+    )
+    fLog.flush()
 
     ttl_path = os.path.join("data", f"{base}_OPIN_TTLtimestamps_{date_str}.csv")
     fTTL = open(ttl_path, "w", newline="", encoding="utf-8")
-    fTTL.write("dyad,session,session_type,exp_condition,role,segment,time.time,run.time,comm.time,conflict_text,first_speaker,participant_role\n"); fTTL.flush()
+    fTTL.write(
+        "dyad,session,session_type,exp_condition,role,segment,time.time,run.time,comm.time,conflict_text,first_speaker,participant_role\n"
+    )
+    fTTL.flush()
 
     mon = make_monitor(SCANNER)
-    win = visual.Window(size=WIN_SIZE, color='black', fullscr=FULLSCR, units='norm', monitor=mon)
+    win = visual.Window(
+        size=WIN_SIZE, color="black", fullscr=FULLSCR, units="norm", monitor=mon
+    )
     win.mouseVisible = False
-    txt = lambda **kw: visual.TextStim(win, height=LETTER_H, wrapWidth=WRAP_W, color='white', **kw)
+    txt = lambda **kw: visual.TextStim(
+        win, height=LETTER_H, wrapWidth=WRAP_W, color="white", **kw
+    )
 
     show_instructions = txt(text="")
-    show_opinion      = txt(text="", pos=(0, 0.25))
-    show_timer        = txt(text="", pos=(0, -0.70))
-    show_blank        = txt(text="+", pos=(0, 0.00))
-    show_end          = txt(text="You are now done with this task.")
+    show_opinion = txt(text="", pos=(0, 0.25))
+    show_timer = txt(text="", pos=(0, -0.70))
+    show_blank = txt(text="+", pos=(0, 0.00))
+    show_end = txt(text="You are now done with this task.")
 
     instr = (
-        f"In the last task, you discussed {conflict_text.upper()} with your partner.\n\n\n" 
-
+        f"In the last task, you discussed {conflict_text.upper()} with your partner.\n\n\n"
         f"Next, we would like you to report your own personal opinion on {conflict_text.upper()}. For N minutes,\n"
         "please speak aloud whatever you can about your thoughts and feelings on the topic.\n\n\n"
-        
         "This recording is confidential. The experimenter has muted the audio, and what you say now will\n"
         "NOT be shared with your partner.\n\n\n"
         "You’ll first see a fixation cross for 10 seconds.\n"
         " After that, you will see instructions to begin speaking."
     )
-    event.clearEvents(eventType='keyboard')
+    event.clearEvents(eventType="keyboard")
     show_instructions.setText(instr)
     trigger_source = None
     while trigger_source is None:
-        show_instructions.draw(); win.flip()
+        show_instructions.draw()
+        win.flip()
         keys = event.getKeys()
         if KEY_QUIT in keys:
-            win.close(); core.quit()
+            win.close()
+            core.quit()
         if any(k in TTL_ACCEPT for k in keys):
-            trigger_source = 'ttl'
+            trigger_source = "ttl"
             break
         core.wait(0.01)
 
     run_clock = core.Clock()
 
     # Trigger logs
-    fLog.write(f"{dyad},{session},{SESSION_TYPE},{exp_condition},trigger_start_{trigger_source},{time.time()},{run_clock.getTime()},,,{first_speaker},{role}\n"); fLog.flush()
-    log_ttl(fTTL, exp_condition, '', f'trigger_start_{trigger_source}', run_clock, None, conflict_text, first_speaker, role, session, dyad,SESSION_TYPE)
+    fLog.write(
+        f"{dyad},{session},{SESSION_TYPE},{exp_condition},trigger_start_{trigger_source},{time.time()},{run_clock.getTime()},,,{first_speaker},{role}\n"
+    )
+    fLog.flush()
+    log_ttl(
+        fTTL,
+        exp_condition,
+        "",
+        f"trigger_start_{trigger_source}",
+        run_clock,
+        None,
+        conflict_text,
+        first_speaker,
+        role,
+        session,
+        dyad,
+        SESSION_TYPE,
+    )
 
     # brief blank
-    show_blank.draw(); win.flip()
+    show_blank.draw()
+    win.flip()
     blank_clock = core.Clock()
     while blank_clock.getTime() < INSTR_BLANK_S:
         keys = event.getKeys([TTL_KEY, KEY_QUIT])
         if keys:
             if TTL_KEY in keys:
-                log_ttl(fTTL, exp_condition, '', 'blank', run_clock, None, conflict_text, first_speaker, role, session, dyad,SESSION_TYPE)
-                event.clearEvents(eventType='keyboard')
+                log_ttl(
+                    fTTL,
+                    exp_condition,
+                    "",
+                    "blank",
+                    run_clock,
+                    None,
+                    conflict_text,
+                    first_speaker,
+                    role,
+                    session,
+                    dyad,
+                    SESSION_TYPE,
+                )
+                event.clearEvents(eventType="keyboard")
             if KEY_QUIT in keys:
-                win.close(); core.quit()
+                win.close()
+                core.quit()
         core.wait(0.01)
 
     # ---------------------------
@@ -206,20 +297,23 @@ def main(pid: str, session: int, conflict: str, csv_path: str):
     op_clock = core.Clock()
 
     # Main CSV: opinion_start
-    thisExp.addData('dyad', dyad)
-    thisExp.addData('session', session)
-    thisExp.addData('exp_condition', exp_condition)
-    thisExp.addData('event', 'opinion_start')
-    thisExp.addData('role', '')
-    thisExp.addData('onset_run_s', run_clock.getTime())
-    thisExp.addData('onset_phase_s', op_clock.getTime())
-    thisExp.addData('conflict_text', conflict_text)
-    thisExp.addData('first_speaker', first_speaker)
-    thisExp.addData('participant_role', role)
+    thisExp.addData("dyad", dyad)
+    thisExp.addData("session", session)
+    thisExp.addData("exp_condition", exp_condition)
+    thisExp.addData("event", "opinion_start")
+    thisExp.addData("role", "")
+    thisExp.addData("onset_run_s", run_clock.getTime())
+    thisExp.addData("onset_phase_s", op_clock.getTime())
+    thisExp.addData("conflict_text", conflict_text)
+    thisExp.addData("first_speaker", first_speaker)
+    thisExp.addData("participant_role", role)
     thisExp.nextEntry()
 
     # TimingsLog: start
-    fLog.write(f"{dyad},{session},{SESSION_TYPE},{exp_condition},opinion_start,{time.time()},{run_clock.getTime()},{op_clock.getTime()},{conflict_text},{first_speaker},{role}\n"); fLog.flush()
+    fLog.write(
+        f"{dyad},{session},{SESSION_TYPE},{exp_condition},opinion_start,{time.time()},{run_clock.getTime()},{op_clock.getTime()},{conflict_text},{first_speaker},{role}\n"
+    )
+    fLog.flush()
 
     submitted = False
     while op_clock.getTime() < OPINION_S and not submitted:
@@ -228,53 +322,102 @@ def main(pid: str, session: int, conflict: str, csv_path: str):
         keys = event.getKeys([TTL_KEY, KEY_QUIT] + ([KEY_SUBMIT] if KEY_SUBMIT else []))
         if keys:
             if TTL_KEY in keys:
-                log_ttl(fTTL, exp_condition, '', 'opinion', run_clock, op_clock, conflict_text, first_speaker, role, session, dyad,SESSION_TYPE)
-                event.clearEvents(eventType='keyboard')
+                log_ttl(
+                    fTTL,
+                    exp_condition,
+                    "",
+                    "opinion",
+                    run_clock,
+                    op_clock,
+                    conflict_text,
+                    first_speaker,
+                    role,
+                    session,
+                    dyad,
+                    SESSION_TYPE,
+                )
+                event.clearEvents(eventType="keyboard")
             if KEY_QUIT in keys:
-                win.close(); core.quit()
+                win.close()
+                core.quit()
             if KEY_SUBMIT and (KEY_SUBMIT in keys):
                 submitted = True
-                event.clearEvents(eventType='keyboard')
+                event.clearEvents(eventType="keyboard")
         win.flip()
 
     # TimingsLog: end
-    fLog.write(f"{dyad},{session},{SESSION_TYPE},{exp_condition},opinion_end,{time.time()},{run_clock.getTime()},{op_clock.getTime()},{conflict_text},{first_speaker},{role}\n"); fLog.flush()
+    fLog.write(
+        f"{dyad},{session},{SESSION_TYPE},{exp_condition},opinion_end,{time.time()},{run_clock.getTime()},{op_clock.getTime()},{conflict_text},{first_speaker},{role}\n"
+    )
+    fLog.flush()
 
     # --- MAIN CSV ROW: opinion_end (mirror of opinion_start) ---
-    thisExp.addData('dyad', dyad)
-    thisExp.addData('session', session)
-    thisExp.addData('exp_condition', exp_condition)
-    thisExp.addData('event', 'opinion_end')               # explicit phase boundary
-    thisExp.addData('role', '')                           # no speaker/listener in solo opinion
-    thisExp.addData('onset_run_s', run_clock.getTime())   # secs since trigger
-    thisExp.addData('onset_phase_s', op_clock.getTime())  # secs since opinion phase start
-    thisExp.addData('conflict_text', conflict_text)
-    thisExp.addData('first_speaker', first_speaker)
-    thisExp.addData('participant_role', role)
+    thisExp.addData("dyad", dyad)
+    thisExp.addData("session", session)
+    thisExp.addData("exp_condition", exp_condition)
+    thisExp.addData("event", "opinion_end")  # explicit phase boundary
+    thisExp.addData("role", "")  # no speaker/listener in solo opinion
+    thisExp.addData("onset_run_s", run_clock.getTime())  # secs since trigger
+    thisExp.addData(
+        "onset_phase_s", op_clock.getTime()
+    )  # secs since opinion phase start
+    thisExp.addData("conflict_text", conflict_text)
+    thisExp.addData("first_speaker", first_speaker)
+    thisExp.addData("participant_role", role)
     thisExp.nextEntry()
-    
+
     show_opinion.setAutoDraw(False)
     show_timer.setAutoDraw(False)
     win.flip()
 
-    show_end.draw(); win.flip(); core.wait(1.0)
+    show_end.draw()
+    win.flip()
+    core.wait(1.0)
 
     # save & close
-    thisExp.saveAsWideText(filename + '.csv')
+    thisExp.saveAsWideText(filename + ".csv")
     thisExp.saveAsPickle(filename)
     thisExp.abort()
     logging.flush()
     try:
-        fLog.close(); fTTL.close()
+        fLog.close()
+        fTTL.close()
     except Exception:
         pass
-    win.close(); core.quit()
+    win.close()
+    core.quit()
+
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--pid", "-p", type=str, required=True, help="3-digit participant ID (e.g., 011, 402)")
-    ap.add_argument("--session", "-s", type=int, choices=[1,2], required=True, help="Session number (1 or 2)")
-    ap.add_argument("--conflict", "-t", type=str, required=True, help="Human-readable conflict topic to display/log")
-    ap.add_argument("--csv", "-c", type=str, default=CSV_FILENAME, help="Path to participant_counterbalancing.csv")
+    ap.add_argument(
+        "--pid",
+        "-p",
+        type=str,
+        required=True,
+        help="3-digit participant ID (e.g., 011, 402)",
+    )
+    ap.add_argument(
+        "--session",
+        "-s",
+        type=int,
+        choices=[1, 2],
+        required=True,
+        help="Session number (1 or 2)",
+    )
+    ap.add_argument(
+        "--conflict",
+        "-t",
+        type=str,
+        required=True,
+        help="Human-readable conflict topic to display/log",
+    )
+    ap.add_argument(
+        "--csv",
+        "-c",
+        type=str,
+        default=CSV_FILENAME,
+        help="Path to participant_counterbalancing.csv",
+    )
     args = ap.parse_args()
     main(pid=args.pid, session=args.session, conflict=args.conflict, csv_path=args.csv)

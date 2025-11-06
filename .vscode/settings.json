@@ -1,13 +1,11 @@
 {
-    "python.testing.pytestArgs": [
-        "tests"
-    ],
-    "python.testing.unittestEnabled": false,
-    "python.testing.pytestEnabled": true,
-    "terminal.integrated.env.windows": {
-        "UV_PROJECT_ENVIRONMENT": "/home/david/.virtualenvs/neurotalk/",
-    },
-    "terminal.integrated.env.linux": {
-        "UV_PROJECT_ENVIRONMENT": "/home/david/.virtualenvs/neurotalk/",
-    }
+  "python.testing.pytestArgs": ["tests"],
+  "python.testing.unittestEnabled": false,
+  "python.testing.pytestEnabled": true,
+  "terminal.integrated.env.windows": {
+    "UV_PROJECT_ENVIRONMENT": "/home/david/.virtualenvs/neurotalk/"
+  },
+  "terminal.integrated.env.linux": {
+    "UV_PROJECT_ENVIRONMENT": "/home/david/.virtualenvs/neurotalk/"
+  }
 }

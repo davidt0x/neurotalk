@@ -8,12 +8,11 @@ legacy CONV/DIAD scripts but callers are free to override anything.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable, Optional, Sequence, Tuple
 
-
-PortRange = Tuple[int, int]
+PortRange = tuple[int, int]
 
 
 @dataclass(slots=True)
@@ -38,8 +37,8 @@ class NetworkConfig:
         Number of seconds to wait for handshake completion.
     """
 
-    local_ports: Tuple[int, int, int] = (30002, 30001, 30003)
-    remote_hint: Tuple[str, int, int, int] = ("127.0.0.1", 30002, 30001, 30003)
+    local_ports: tuple[int, int, int] = (30002, 30001, 30003)
+    remote_hint: tuple[str, int, int, int] = ("127.0.0.1", 30002, 30001, 30003)
     stun_servers: Sequence[str] = ()
     nat_role: int = 1
     punch_timeout_s: float = 30.0
@@ -103,9 +102,9 @@ class RecordingConfig:
     """
 
     directory: Path = Path("data")
-    local_track: Optional[Path] = None
-    remote_track: Optional[Path] = None
-    mix_track: Optional[Path] = None
+    local_track: Path | None = None
+    remote_track: Path | None = None
+    mix_track: Path | None = None
 
 
 @dataclass(slots=True)

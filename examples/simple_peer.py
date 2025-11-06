@@ -4,16 +4,15 @@
 from __future__ import annotations
 
 import argparse
-import time
-from pathlib import Path
-from collections import deque
-import queue
 import logging
+import queue
+import time
+from collections import deque
+from pathlib import Path
 
 from neurotalk.config import AudioConfig, NetworkConfig, RecordingConfig, SessionConfig
 from neurotalk.control import ControlMessageType
 from neurotalk.session import ConversationSession
-
 
 LOGGER = logging.getLogger("neurotalk.simple_peer")
 
@@ -23,19 +22,58 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("remote_ip", help="Peer IP address")
     parser.add_argument("participant_id", help="Participant identifier")
     parser.add_argument("role", help="Role label (e.g., A or B)")
-    parser.add_argument("record_dir", nargs="?", default="data", help="Directory for recordings")
-    parser.add_argument("segment_label", nargs="?", default="segment", help="Base label for recording segments")
-    parser.add_argument("--local-in", type=int, default=30002, help="Local inbound audio port")
-    parser.add_argument("--local-out", type=int, default=30001, help="Local outbound audio port")
-    parser.add_argument("--local-control", type=int, default=30003, help="Local control port")
-    parser.add_argument("--remote-in", type=int, default=30002, help="Remote inbound audio port")
-    parser.add_argument("--remote-out", type=int, default=30001, help="Remote outbound audio port")
-    parser.add_argument("--remote-control", type=int, default=30003, help="Remote control port")
-    parser.add_argument("--nat-role", type=int, choices=[0, 1], default=None, help="NAT role: 0=passive, 1=active")
-    parser.add_argument("--chunk-frames", type=int, default=512, help="Audio buffer size (default: 512)")
-    parser.add_argument("--sample-rate", type=int, default=16000, help="Sample rate Hz (default: 16000)")
-    parser.add_argument("--turn-duration", type=float, default=10.0, help="Seconds to speak before passing the turn")
-    parser.add_argument("--debug-duration", type=float, default=10.0, help="Seconds to run debug loopback before task")
+    parser.add_argument(
+        "record_dir", nargs="?", default="data", help="Directory for recordings"
+    )
+    parser.add_argument(
+        "segment_label",
+        nargs="?",
+        default="segment",
+        help="Base label for recording segments",
+    )
+    parser.add_argument(
+        "--local-in", type=int, default=30002, help="Local inbound audio port"
+    )
+    parser.add_argument(
+        "--local-out", type=int, default=30001, help="Local outbound audio port"
+    )
+    parser.add_argument(
+        "--local-control", type=int, default=30003, help="Local control port"
+    )
+    parser.add_argument(
+        "--remote-in", type=int, default=30002, help="Remote inbound audio port"
+    )
+    parser.add_argument(
+        "--remote-out", type=int, default=30001, help="Remote outbound audio port"
+    )
+    parser.add_argument(
+        "--remote-control", type=int, default=30003, help="Remote control port"
+    )
+    parser.add_argument(
+        "--nat-role",
+        type=int,
+        choices=[0, 1],
+        default=None,
+        help="NAT role: 0=passive, 1=active",
+    )
+    parser.add_argument(
+        "--chunk-frames", type=int, default=512, help="Audio buffer size (default: 512)"
+    )
+    parser.add_argument(
+        "--sample-rate", type=int, default=16000, help="Sample rate Hz (default: 16000)"
+    )
+    parser.add_argument(
+        "--turn-duration",
+        type=float,
+        default=10.0,
+        help="Seconds to speak before passing the turn",
+    )
+    parser.add_argument(
+        "--debug-duration",
+        type=float,
+        default=10.0,
+        help="Seconds to run debug loopback before task",
+    )
     parser.add_argument(
         "--speaker-order",
         choices=["first", "second"],
@@ -53,7 +91,12 @@ def parse_args() -> argparse.Namespace:
 def build_session(args: argparse.Namespace) -> ConversationSession:
     network = NetworkConfig(
         local_ports=(args.local_in, args.local_out, args.local_control),
-        remote_hint=(args.remote_ip, args.remote_in, args.remote_out, args.remote_control),
+        remote_hint=(
+            args.remote_ip,
+            args.remote_in,
+            args.remote_out,
+            args.remote_control,
+        ),
         nat_role=args.nat_role,
         punch_timeout_s=10.0,
         stun_servers=(),
@@ -70,7 +113,9 @@ def build_session(args: argparse.Namespace) -> ConversationSession:
     return ConversationSession(session_config)
 
 
-def wait_for_turn(session: ConversationSession, *, remote_label: str | None = None) -> None:
+def wait_for_turn(
+    session: ConversationSession, *, remote_label: str | None = None
+) -> None:
     LOGGER.debug("Waiting for TURN_PASS events")
     if remote_label:
         LOGGER.debug("Starting remote segment %s", remote_label)
@@ -102,11 +147,17 @@ def set_mode(session: ConversationSession, *, speaking: bool) -> None:
         session.enable_receive(True)
 
 
-def speak_segment(session: ConversationSession, label: str, duration: float, run_clock: float) -> None:
-    LOGGER.debug("Starting segment %s duration=%.2f run_clock=%.2f", label, duration, run_clock)
+def speak_segment(
+    session: ConversationSession, label: str, duration: float, run_clock: float
+) -> None:
+    LOGGER.debug(
+        "Starting segment %s duration=%.2f run_clock=%.2f", label, duration, run_clock
+    )
     set_mode(session, speaking=True)
     session.start_segment(label, target="local")
-    print(f"[{session.config.role}] Speak now ({duration:.1f}s). Press Enter to pass early.")
+    print(
+        f"[{session.config.role}] Speak now ({duration:.1f}s). Press Enter to pass early."
+    )
     start = time.monotonic()
     while True:
         remaining = duration - (time.monotonic() - start)
@@ -152,7 +203,9 @@ def main() -> None:
                 wait_for_turn(session, remote_label=remote_label)
                 has_control = True
 
-            speak_segment(session, label, args.turn_duration, time.monotonic() - run_start)
+            speak_segment(
+                session, label, args.turn_duration, time.monotonic() - run_start
+            )
             has_control = False
 
         if remote_queue:

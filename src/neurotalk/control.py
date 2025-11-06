@@ -8,10 +8,9 @@ components can produce/consume them without manipulating raw bytes directly.
 
 from __future__ import annotations
 
+import struct
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import Optional, Tuple
-import struct
 
 
 class ControlMessageType(Enum):
@@ -52,7 +51,7 @@ class SyncTimestamp:
         return _DOUBLE.pack(self.value)
 
     @staticmethod
-    def unpack(payload: bytes) -> "SyncTimestamp":
+    def unpack(payload: bytes) -> SyncTimestamp:
         (ts,) = _DOUBLE.unpack(payload)
         return SyncTimestamp(ts)
 
@@ -80,12 +79,12 @@ class TurnPassPayload:
         return _TRIPLE.pack(self.wall_clock, self.run_clock, self.phase_clock)
 
     @staticmethod
-    def unpack(payload: bytes) -> "TurnPassPayload":
+    def unpack(payload: bytes) -> TurnPassPayload:
         wall, run, phase = _TRIPLE.unpack(payload)
         return TurnPassPayload(wall, run, phase)
 
 
-def classify_payload(data: bytes) -> Tuple[ControlMessageType, Optional[object]]:
+def classify_payload(data: bytes) -> tuple[ControlMessageType, object | None]:
     """
     Determine the message type for a raw UDP payload and return the parsed form.
 
