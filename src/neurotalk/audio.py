@@ -56,17 +56,6 @@ class AudioPacket:
     timestamp: float
 
 
-class RecorderTarget:
-    path: str
-    channels: int
-    sample_rate_hz: int
-
-
-class Recorder(Protocol):
-    def write(self, packet: AudioPacket) -> None: ...
-    def close(self) -> None: ...
-
-
 class SoundDeviceInputStream:
     def __init__(self, stream: sd.InputStream):
         self._stream = stream
@@ -200,7 +189,7 @@ class AudioInputWorker:
                         exc_info=exc,
                     )
 
-    def _callback(self, in_data, frame_count, time_info, status_flags) -> None:
+    def _callback(self, in_data, _frame_count, _time_info, status_flags) -> None:
         if status_flags:
             logging.debug("AudioInput status: %s", status_flags)
         if isinstance(in_data, (bytes, bytearray)):
@@ -307,7 +296,7 @@ class AudioOutputWorker:
                         exc_info=exc,
                     )
 
-    def _callback(self, out_data, frame_count, time_info, status_flags) -> None:
+    def _callback(self, out_data, frame_count, _time_info, status_flags) -> None:
         if status_flags:
             logging.debug("AudioOutput status: %s", status_flags)
         try:

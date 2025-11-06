@@ -45,7 +45,8 @@ class NetworkConfig:
 
     def __post_init__(self) -> None:
         if self.nat_role not in (0, 1):
-            raise ValueError("nat_role must be 0 (passive) or 1 (active)")
+            msg = "nat_role must be 0 (passive) or 1 (active)"
+            raise ValueError(msg)
 
 
 @dataclass(slots=True)
@@ -77,11 +78,14 @@ class AudioConfig:
     def __post_init__(self) -> None:
         chunk = self.chunk_frames
         if not (128 <= chunk <= 4096):
-            raise ValueError("chunk_frames must be between 128 and 4096")
+            msg = "chunk_frames must be between 128 and 4096"
+            raise ValueError(msg)
         if chunk & (chunk - 1) != 0:
-            raise ValueError("chunk_frames must be a power of two")
+            msg = "chunk_frames must be a power of two"
+            raise ValueError(msg)
         if not (1 <= self.buffer_chunks <= 25):
-            raise ValueError("buffer_chunks must be between 1 and 25")
+            msg = "buffer_chunks must be between 1 and 25"
+            raise ValueError(msg)
 
 
 @dataclass(slots=True)
@@ -140,6 +144,8 @@ class SessionConfig:
 
     def __post_init__(self) -> None:
         if not self.participant_id:
-            raise ValueError("participant_id must be non-empty")
+            msg = "participant_id must be non-empty"
+            raise ValueError(msg)
         if not self.role:
-            raise ValueError("role must be non-empty")
+            msg = "role must be non-empty"
+            raise ValueError(msg)

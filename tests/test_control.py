@@ -57,5 +57,5 @@ def test_turn_pass_roundtrip():
 
 def test_unknown_payload_raises():
     """Unexpected payload sizes must trigger a `ValueError`."""
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Unknown control payload length=5"):
         classify_payload(b"\x00" * 5)

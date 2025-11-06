@@ -28,8 +28,9 @@ class ErrorRecorder:
     def __init__(self):
         self.closed = False
 
-    def write(self, packet: AudioPacket) -> None:
-        raise RuntimeError("recorder failure")
+    def write(self, _packet: AudioPacket) -> None:
+        msg = "recorder failure"
+        raise RuntimeError(msg)
 
     def close(self) -> None:
         self.closed = True
@@ -92,8 +93,10 @@ class FakeStreamFactory:
         self.input_stream: FakeInputStream | None = None
         self.output_stream: FakeOutputStream | None = None
         self.terminated = False
+        self.last_input_config: AudioConfig | None = None
 
     def open_input_stream(self, config: AudioConfig, callback):
+        self.last_input_config = config
         stream = FakeInputStream(callback)
         self.input_stream = stream
         return stream

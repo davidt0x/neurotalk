@@ -89,7 +89,7 @@ class WavRecorder(Recorder):
     def __init__(self, target: RecorderTarget):
         self._target = target
         self._target.path.parent.mkdir(parents=True, exist_ok=True)
-        self._wave = wave.open(str(self._target.path), "wb")
+        self._wave = wave.open(str(self._target.path), "wb") # noqa: SIM115
         self._wave.setnchannels(target.channels)
         self._wave.setsampwidth(target.sample_width_bytes)
         self._wave.setframerate(target.sample_rate_hz)
@@ -104,7 +104,8 @@ class WavRecorder(Recorder):
 
     def write(self, packet: AudioPacket) -> None:
         if self._closed:
-            raise RuntimeError("Recorder already closed")
+            msg = "Recorder already closed"
+            raise RuntimeError(msg)
         data = packet.pcm
         self._wave.writeframes(data)
         frames = len(data) // (self._target.channels * self._target.sample_width_bytes)
@@ -114,7 +115,8 @@ class WavRecorder(Recorder):
         self, label: str, *, metadata: dict[str, object] | None = None
     ) -> None:
         if self._active_segment is not None:
-            raise RuntimeError("Segment already in progress")
+            msg = "Segment already in progress"
+            raise RuntimeError(msg)
         start_time = self._frames_written / self._target.sample_rate_hz
         marker = SegmentMarker(
             label=label,

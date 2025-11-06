@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import argparse
 import csv
-import os
 import re
 import time
+from pathlib import Path
 
 from psychopy import core, data, event, logging, monitors, visual
 
@@ -33,12 +33,14 @@ SESSION_TYPE = "neutral"  # fixed for this task
 # ----------------- helpers -----------------
 def decode_pid(pid_str: str):
     if not (isinstance(pid_str, str) and pid_str.isdigit() and len(pid_str) == 3):
-        raise ValueError("PID must be a 3-digit code like 011 or 402")
+        msg = "PID must be a 3-digit code like 011 or 402"
+        raise ValueError(msg)
     pid_num = int(pid_str)
     dyad = pid_num // 10
     person = pid_num % 10
     if person not in (1, 2) or dyad < 1:
-        raise ValueError(f"Bad participant id: {pid_str}")
+        msg = f"Bad participant id: {pid_str}"
+        raise ValueError(msg)
     role = "A" if person == 1 else "B"
     return dyad, role
 
@@ -65,15 +67,19 @@ def load_assignment_row(csv_path: str, pid: str):
       Neutral_session_1, Couple_session_1, Neutral_session_2, Couple_session_2,
       first_topic, second_topic
     """
-    abs_path = os.path.abspath(csv_path)
-    if not os.path.exists(csv_path):
+    csv_file = Path(csv_path)
+    abs_path = csv_file.resolve()
+    if not csv_file.exists():
+        msg = (
+            f"Cannot find CSV at '{csv_file}' (abs: '{abs_path}'). "
+            f"Current working directory: '{Path.cwd()}'."
+        )
         raise FileNotFoundError(
-            f"Cannot find CSV at '{csv_path}' (abs: '{abs_path}'). "
-            f"Current working directory: '{os.getcwd()}'."
+            msg
         )
 
     # Detect delimiter to guard against ';' exports
-    with open(csv_path, encoding="utf-8", newline="") as fpeek:
+    with csv_file.open(encoding="utf-8", newline="") as fpeek:
         sample = fpeek.read(4096)
         fpeek.seek(0)
         try:
@@ -82,7 +88,7 @@ def load_assignment_row(csv_path: str, pid: str):
         except Exception:
             delimiter = ","  # fallback
 
-    with open(csv_path, encoding="utf-8", newline="") as f:
+    with csv_file.open(encoding="utf-8", newline="") as f:
         rdr = csv.DictReader(f, delimiter=delimiter)
         need = {
             "participant_id",
@@ -95,9 +101,6 @@ def load_assignment_row(csv_path: str, pid: str):
             "second_topic",
         }
         cols = set(rdr.fieldnames or [])
-        print(f"[CSV DEBUG] Reading: {abs_path}")
-        print(f"[CSV DEBUG] Detected delimiter: {delimiter!r}")
-        print(f"[CSV DEBUG] Columns found: {sorted(cols)}")
 
         missing = need - cols
         if missing:
@@ -108,9 +111,12 @@ def load_assignment_row(csv_path: str, pid: str):
                 if lw in lowmap and want not in cols:
                     suggestions[want] = lowmap[lw]
             hint = f" (Possible header variants: {suggestions})" if suggestions else ""
-            raise ValueError(
+            msg = (
                 f"CSV is missing required columns: {sorted(missing)}. "
                 f"Found columns: {sorted(cols)}.{hint}"
+            )
+            raise ValueError(
+                msg
             )
 
         found_row = None
@@ -138,9 +144,12 @@ def load_assignment_row(csv_path: str, pid: str):
                 break
 
         if not found_row:
-            raise KeyError(
+            msg = (
                 f"participant_id '{pid}' not found in {abs_path}. "
                 f"Note: your script expects zero-padded IDs like '011'."
+            )
+            raise KeyError(
+                msg
             )
 
         return found_row
@@ -150,7 +159,8 @@ def pick_first_speaker(starters: dict, session: int):
     key = f"Neutral_session_{session}"  # session type fixed to 'neutral'
     val = starters.get(key, "")
     if val not in ("A", "B"):
-        raise ValueError(f"Starter value for {key} must be 'A' or 'B', got: {val!r}")
+        msg = f"Starter value for {key} must be 'A' or 'B', got: {val!r}"
+        raise ValueError(msg)
     return val
 
 
@@ -227,7 +237,8 @@ def log_comm_press(
 # ----------------------------------------------------
 def main(pid: str, session: int, csv_path: str):
     if session not in (1, 2):
-        raise ValueError("Session must be 1 or 2")
+        msg = "Session must be 1 or 2"
+        raise ValueError(msg)
 
     # Decode ID and role
     dyad, role = decode_pid(pid)
@@ -243,9 +254,12 @@ def main(pid: str, session: int, csv_path: str):
     discussion_topic = discussion_topic.strip()
     if not discussion_topic:
         which = "first_topic" if session == 1 else "second_topic"
-        raise ValueError(
+        msg = (
             f"No discussion topic found in CSV for participant {pid} session {session} "
             f"(expected column '{which}' to be non-empty)."
+        )
+        raise ValueError(
+            msg
         )
     conflict_text = discussion_topic
     display_topic = canonical_topic(conflict_text)
@@ -279,15 +293,10 @@ def main(pid: str, session: int, csv_path: str):
     )
 
     cond_lower = (exp_condition or "").strip().lower()
-    conv_instr_text = (
-        persuade_instr_text
-        if cond_lower.startswith("persu")
-        else (
-            compromise_instr_text
-            if cond_lower.startswith("compr")
-            else compromise_instr_text
-        )
-    )
+    if cond_lower.startswith("persu"):
+        conv_instr_text = persuade_instr_text
+    else:
+        conv_instr_text = compromise_instr_text
 
     starters = {
         "Neutral_session_1": row["Neutral_session_1"],
@@ -299,31 +308,32 @@ def main(pid: str, session: int, csv_path: str):
 
     # --- data files ---
     date_str = data.getDateStr()
-    os.makedirs("data", exist_ok=True)
+    data_dir = Path("data")
+    data_dir.mkdir(exist_ok=True)
     base = f"{pid}_sess{session}_{SESSION_TYPE}_{exp_condition}_{first_speaker}_{slug(conflict_text)}"
-    filename = os.path.join("data", f"{base}_CONV_min_{date_str}")
+    filename = data_dir / f"{base}_CONV_min_{date_str}"
 
     thisExp = data.ExperimentHandler(
         name="CONV_min",
         extraInfo={"session_type": SESSION_TYPE},
         savePickle=True,
         saveWideText=True,
-        dataFileName=filename,
+        dataFileName=str(filename),
     )
-    logging.LogFile(filename + ".log", level=logging.EXP)
+    logging.LogFile(str(filename.with_suffix(".log")), level=logging.EXP)
     logging.console.setLevel(logging.WARNING)
 
     # --- TimingsLog (minimal) ---
-    timings_path = os.path.join("data", f"{base}_CONV_TimingsLog_{date_str}.csv")
-    fLog = open(timings_path, "w", newline="", encoding="utf-8")
+    timings_path = data_dir / f"{base}_CONV_TimingsLog_{date_str}.csv"
+    fLog = timings_path.open("w", newline="", encoding="utf-8")
     fLog.write(
         "dyad,session,session_type,exp_condition,role,time.time,run.time,comm.time,conflict_text,first_speaker,participant_role\n"
     )
     fLog.flush()
 
     # --- TTL timestamps file (verbose) ---
-    ttl_path = os.path.join("data", f"{base}_CONV_TTLtimestamps_{date_str}.csv")
-    fTTL = open(ttl_path, "w", newline="", encoding="utf-8")
+    ttl_path = data_dir / f"{base}_CONV_TTLtimestamps_{date_str}.csv"
+    fTTL = ttl_path.open("w", newline="", encoding="utf-8")
     fTTL.write(
         "dyad,session,session_type,exp_condition,role,segment,time.time,run.time,comm.time,conflict_text,first_speaker,participant_role\n"
     )
@@ -335,9 +345,10 @@ def main(pid: str, session: int, csv_path: str):
         size=WIN_SIZE, color="black", fullscr=FULLSCR, units="norm", monitor=mon
     )
     win.mouseVisible = False
-    txt = lambda **kw: visual.TextStim(
-        win, height=LETTER_H, wrapWidth=WRAP_W, color="white", **kw
-    )
+    def txt(**kw):
+        return visual.TextStim(
+            win, height=LETTER_H, wrapWidth=WRAP_W, color="white", **kw
+        )
 
     show_instructions = txt(text="")
     show_role_txt = txt(text="", pos=(0, 0.65))
@@ -534,7 +545,7 @@ def main(pid: str, session: int, csv_path: str):
             event.clearEvents(eventType="keyboard")
 
         # countdown
-        remaining = int(round(COMM_S - comm_clock.getTime()))
+        remaining = round(COMM_S - comm_clock.getTime())
         show_timer.setText(f"{remaining} seconds")
         win.flip()
 

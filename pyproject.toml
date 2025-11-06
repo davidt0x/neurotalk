@@ -134,6 +134,11 @@ extend-select = [
 ignore = [
   "PLR09",    # Too many <...>
   "PLR2004",  # Magic value used in comparison
+  "ARG001",   # Unused function argument
+  # "ARG002",   # Unused argument
+  "ARG003",   # Unused kwarg
+  "ARG005",   # Unused lambda argument
+  "RUF001",   # Ambiguous Unicode characters in strings.
 ]
 isort.required-imports = ["from __future__ import annotations"]
 # Uncomment if using a _compat.typing backport
@@ -142,6 +147,8 @@ isort.required-imports = ["from __future__ import annotations"]
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["T20"]
 "noxfile.py" = ["T20"]
+"examples/CONV_scan.py" = ["ALL"]
+"examples/DIAD_convo.py" = ["ALL"]
 
 
 [tool.pylint]

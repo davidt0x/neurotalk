@@ -117,4 +117,5 @@ def classify_payload(data: bytes) -> tuple[ControlMessageType, object | None]:
     if len(data) == _TRIPLE.size:
         return ControlMessageType.TURN_PASS, TurnPassPayload.unpack(data)
 
-    raise ValueError(f"Unknown control payload length={len(data)}")
+    msg = f"Unknown control payload length={len(data)}"
+    raise ValueError(msg)

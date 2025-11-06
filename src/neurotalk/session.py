@@ -17,17 +17,15 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
-
-from .audio import (
+from neurotalk.audio import (
     AudioInputWorker,
     AudioOutputWorker,
     AudioPacket,
     SoundDeviceStreamFactory,
     StreamFactory,
 )
-from .config import SessionConfig
-from .control import (
+from neurotalk.config import SessionConfig
+from neurotalk.control import (
     DEBUG_READY,
     DEBUG_STOP,
     THANKS,
@@ -35,14 +33,18 @@ from .control import (
     TurnPassPayload,
     classify_payload,
 )
-from .network import (
+from neurotalk.network import (
     NetworkConfig,
     SocketBundle,
     configure_nonblocking,
+    flush_pending,
     hole_punch,
     open_sockets,
+    run_stun_diagnostics,
 )
-from .records import RecorderTarget, WavRecorder
+from neurotalk.records import RecorderTarget, WavRecorder
+
+logger = logging.getLogger(__name__)
 
 ControlHandler = Callable[[ControlMessageType, object | None], None]
 
@@ -115,12 +117,9 @@ class ConversationSession:
         net_cfg: NetworkConfig = self.config.network
         bundle = open_sockets(net_cfg)
         if net_cfg.stun_servers:
-            from .network import run_stun_diagnostics
-
             run_stun_diagnostics(net_cfg.stun_servers)
 
         remote = hole_punch(bundle, net_cfg)
-        from .network import flush_pending
 
         configure_nonblocking(bundle)
         flush_pending(bundle)
@@ -213,7 +212,8 @@ class ConversationSession:
         logger.debug("send_turn_pass attempting send: %s", payload)
         sockets = self.state.sockets
         if not sockets:
-            raise RuntimeError("Session not connected")
+            msg = "Session not connected"
+            raise RuntimeError(msg)
         remote_ip, _, _, port_comm = sockets.remote
         try:
             sockets.control.sendto(payload.pack(), (remote_ip, port_comm))
@@ -264,7 +264,8 @@ class ConversationSession:
             target_set = set(target)
         invalid = target_set.difference({"local", "remote"})
         if invalid:
-            raise ValueError(f"Unknown segment target(s): {sorted(invalid)}")
+            msg = f"Unknown segment target(s): {sorted(invalid)}"
+            raise ValueError(msg)
         return target_set
 
     def export_segments(
@@ -321,7 +322,8 @@ class ConversationSession:
 
         sockets = self.state.sockets
         if not sockets:
-            raise RuntimeError("Session not connected")
+            msg = "Session not connected"
+            raise RuntimeError(msg)
 
         remote_ip, _, _, port_comm = sockets.remote
         deadline = time.time() + self.config.network.punch_timeout_s
@@ -341,7 +343,8 @@ class ConversationSession:
                 partner_time = payload.value  # type: ignore[assignment]
 
         if partner_time is None:
-            raise TimeoutError("Failed to obtain partner timestamp during sync")
+            msg = "Failed to obtain partner timestamp during sync"
+            raise TimeoutError(msg)
 
         common = max(local_time, partner_time) + delay_seconds
         self.state.start_time_common = common
@@ -366,7 +369,8 @@ class ConversationSession:
 
         sockets = self.state.sockets
         if sockets is None:
-            raise RuntimeError("Session not connected")
+            msg = "Session not connected"
+            raise RuntimeError(msg)
 
         remote_ip, _, _, port_comm = sockets.remote
 
@@ -397,7 +401,8 @@ class ConversationSession:
             return
 
         if not partner_ready:
-            raise TimeoutError("Partner did not respond to debug ready signal")
+            msg = "Partner did not respond to debug ready signal"
+            raise TimeoutError(msg)
 
         if on_ready:
             on_ready()

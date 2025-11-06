@@ -155,9 +155,6 @@ def speak_segment(
     )
     set_mode(session, speaking=True)
     session.start_segment(label, target="local")
-    print(
-        f"[{session.config.role}] Speak now ({duration:.1f}s). Press Enter to pass early."
-    )
     start = time.monotonic()
     while True:
         remaining = duration - (time.monotonic() - start)
@@ -171,7 +168,6 @@ def speak_segment(
     phase_clock = time.monotonic() - start
     LOGGER.debug("Passing turn after segment %s phase_clock=%.2f", label, phase_clock)
     session.pass_turn(run_time=run_clock, phase_time=phase_clock)
-    print(f"[{session.config.role}] Turn passed.")
     set_mode(session, speaking=False)
 
 
@@ -186,7 +182,6 @@ def main() -> None:
     if args.speaker_order is None:
         args.speaker_order = "first" if args.role.upper() == "A" else "second"
     session = build_session(args)
-    print(f"[{args.role}] connecting to {args.remote_ip}...")
     session.connect()
     try:
         run_start = time.monotonic()
@@ -197,7 +192,6 @@ def main() -> None:
 
         for label in turn_labels:
             if not has_control:
-                print(f"[{args.role}] Waiting for partner...")
                 set_mode(session, speaking=False)
                 remote_label = remote_queue.popleft() if remote_queue else None
                 wait_for_turn(session, remote_label=remote_label)
@@ -209,7 +203,6 @@ def main() -> None:
             has_control = False
 
         if remote_queue:
-            print(f"[{args.role}] Waiting for partner...")
             set_mode(session, speaking=False)
             remote_label = remote_queue.popleft()
             wait_for_turn(session, remote_label=remote_label)
@@ -219,8 +212,7 @@ def main() -> None:
         session.close()
 
     export_dir = Path(args.record_dir) / "segments"
-    segments = session.export_segments(export_dir)
-    print(f"[{args.role}] Segments exported to {export_dir} => {segments}")
+    session.export_segments(export_dir)
 
 
 if __name__ == "__main__":  # pragma: no cover

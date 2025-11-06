@@ -7,6 +7,7 @@ hole-punching handshake that mirrors the behaviour in the CONV/DIAD scripts.
 
 from __future__ import annotations
 
+import contextlib
 import socket
 import subprocess
 import time
@@ -32,10 +33,8 @@ class SocketBundle:
 
     def close(self) -> None:
         for sock in (self.inbound, self.outbound, self.control):
-            try:
+            with contextlib.suppress(OSError):
                 sock.close()
-            except OSError:
-                pass
 
 
 def run_stun_diagnostics(servers: Iterable[str]) -> None:
@@ -61,7 +60,8 @@ def run_stun_diagnostics(servers: Iterable[str]) -> None:
         except (subprocess.CalledProcessError, FileNotFoundError):
             continue
     if servers and not success:
-        raise NetworkError("STUN diagnostics failed for all provided servers")
+        msg = "STUN diagnostics failed for all provided servers"
+        raise NetworkError(msg)
 
 
 def _create_socket(port: int) -> socket.socket:
@@ -80,7 +80,8 @@ def open_sockets(config: NetworkConfig) -> SocketBundle:
         outbound = _create_socket(out_port)
         control = _create_socket(ctrl_port)
     except OSError as exc:
-        raise NetworkError(f"Failed to bind UDP sockets: {exc}") from exc
+        msg = f"Failed to bind UDP sockets: {exc}"
+        raise NetworkError(msg) from exc
 
     for sock in (inbound, outbound, control):
         sock.settimeout(1.0)
@@ -129,7 +130,8 @@ def hole_punch(
                 handshake_token = incoming_in
                 break
         else:
-            raise NetworkError("Timed out waiting for handshake initiation")
+            msg = "Timed out waiting for handshake initiation"
+            raise NetworkError(msg)
 
         # Confirm by echoing back.
         start = time.monotonic()
@@ -147,7 +149,8 @@ def hole_punch(
             except TimeoutError:
                 continue
         else:
-            raise NetworkError("Handshake confirmation never arrived")
+            msg = "Handshake confirmation never arrived"
+            raise NetworkError(msg)
 
     else:
         # Active role repeatedly probes the remote endpoint.
@@ -171,7 +174,8 @@ def hole_punch(
                 port_comm = addr_ctrl[1]
                 break
         else:
-            raise NetworkError("Handshake probes were not acknowledged")
+            msg = "Handshake probes were not acknowledged"
+            raise NetworkError(msg)
 
         # Final ready message.
         for _ in range(5):

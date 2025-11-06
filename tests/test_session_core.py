@@ -13,7 +13,7 @@ from neurotalk.network import SocketBundle
 from neurotalk.session import ConversationSession
 
 
-def test_sync_start_roundtrip(monkeypatch):
+def test_sync_start_roundtrip():
     """`ConversationSession.sync_start` should negotiate a shared start timestamp."""
 
     # Prepare paired UDP sockets.

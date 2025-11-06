@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import argparse
 import csv
-import os
 import queue
 import re
 import time
@@ -48,12 +47,14 @@ SESSION_TYPE = "couple"  # fixed for this task
 # ----------------- helpers -----------------
 def decode_pid(pid_str: str):
     if not (isinstance(pid_str, str) and pid_str.isdigit() and len(pid_str) == 3):
-        raise ValueError("PID must be a 3-digit code like 011 or 402")
+        msg = "PID must be a 3-digit code like 011 or 402"
+        raise ValueError(msg)
     pid_num = int(pid_str)
     dyad = pid_num // 10
     person = pid_num % 10
     if person not in (1, 2) or dyad < 1:
-        raise ValueError(f"Bad participant id: {pid_str}")
+        msg = f"Bad participant id: {pid_str}"
+        raise ValueError(msg)
     role = "A" if person == 1 else "B"
     return dyad, role
 
@@ -71,9 +72,11 @@ def load_assignment_row(csv_path: str, pid: str):
       participant_id, condition,
       Neutral_session_1, Couple_session_1, Neutral_session_2, Couple_session_2
     """
-    if not os.path.exists(csv_path):
-        raise FileNotFoundError(f"Cannot find CSV: {csv_path}")
-    with open(csv_path, newline="", encoding="utf-8") as f:
+    csv_file = Path(csv_path)
+    if not csv_file.exists():
+        msg = f"Cannot find CSV: {csv_file}"
+        raise FileNotFoundError(msg)
+    with csv_file.open(newline="", encoding="utf-8") as f:
         rdr = csv.DictReader(f)
         need = {
             "participant_id",
@@ -85,7 +88,8 @@ def load_assignment_row(csv_path: str, pid: str):
         }
         if not need.issubset(set(rdr.fieldnames or [])):
             missing = need - set(rdr.fieldnames or [])
-            raise ValueError(f"CSV is missing required columns: {sorted(missing)}")
+            msg = f"CSV is missing required columns: {sorted(missing)}"
+            raise ValueError(msg)
         for row in rdr:
             if (row.get("participant_id") or "").strip() == pid:
                 return {
@@ -104,14 +108,16 @@ def load_assignment_row(csv_path: str, pid: str):
                     .strip()
                     .upper(),
                 }
-    raise KeyError(f"participant_id {pid} not found in {csv_path}")
+    msg = f"participant_id {pid} not found in {csv_file}"
+    raise KeyError(msg)
 
 
 def pick_first_speaker(starters: dict, session: int):
     key = f"Couple_session_{session}"  # session type fixed to 'couple'
     val = starters.get(key, "")
     if val not in ("A", "B"):
-        raise ValueError(f"Starter value for {key} must be 'A' or 'B', got: {val!r}")
+        msg = f"Starter value for {key} must be 'A' or 'B', got: {val!r}"
+        raise ValueError(msg)
     return val
 
 
@@ -210,9 +216,11 @@ def main(
     sample_rate: int,
 ):
     if session not in (1, 2):
-        raise ValueError("Session must be 1 or 2")
+        msg = "Session must be 1 or 2"
+        raise ValueError(msg)
     if not (conflict and conflict.strip()):
-        raise ValueError("You must provide a non-empty --conflict string")
+        msg = "You must provide a non-empty --conflict string"
+        raise ValueError(msg)
 
     # Decode ID and role
     dyad, role = decode_pid(pid)
@@ -259,31 +267,32 @@ def main(
 
     # --- data files ---
     date_str = data.getDateStr()
-    os.makedirs("data", exist_ok=True)
+    data_dir = Path("data")
+    data_dir.mkdir(exist_ok=True)
     base = f"{pid}_sess{session}_{SESSION_TYPE}_{exp_condition}_{first_speaker}_{slug(conflict_text)}"
-    filename = os.path.join("data", f"{base}_CONV_min_{date_str}")
+    filename = data_dir / f"{base}_CONV_min_{date_str}"
 
     thisExp = data.ExperimentHandler(
         name="CONV_min",
         extraInfo={"session_type": SESSION_TYPE},
         savePickle=True,
         saveWideText=True,
-        dataFileName=filename,
+        dataFileName=str(filename),
     )
-    logging.LogFile(filename + ".log", level=logging.EXP)
+    logging.LogFile(str(filename.with_suffix(".log")), level=logging.EXP)
     logging.console.setLevel(logging.WARNING)
 
     # --- TimingsLog (minimal) ---
-    timings_path = os.path.join("data", f"{base}_CONV_TimingsLog_{date_str}.csv")
-    fLog = open(timings_path, "w", newline="", encoding="utf-8")
+    timings_path = data_dir / f"{base}_CONV_TimingsLog_{date_str}.csv"
+    fLog = timings_path.open("w", newline="", encoding="utf-8")
     fLog.write(
         "dyad,session,session_type,exp_condition,role,time.time,run.time,comm.time,conflict_text,first_speaker,participant_role\n"
     )
     fLog.flush()
 
     # TTL timestamps (verbose)
-    ttl_path = os.path.join("data", f"{base}_CONV_TTLtimestamps_{date_str}.csv")
-    fTTL = open(ttl_path, "w", newline="", encoding="utf-8")
+    ttl_path = data_dir / f"{base}_CONV_TTLtimestamps_{date_str}.csv"
+    fTTL = ttl_path.open("w", newline="", encoding="utf-8")
     fTTL.write(
         "dyad,session,session_type,exp_condition,role,segment,time.time,run.time,comm.time,conflict_text,first_speaker,participant_role\n"
     )
@@ -295,9 +304,10 @@ def main(
         size=WIN_SIZE, color="black", fullscr=FULLSCR, units="norm", monitor=mon
     )
     win.mouseVisible = False
-    txt = lambda **kw: visual.TextStim(
-        win, height=LETTER_H, wrapWidth=WRAP_W, color="white", **kw
-    )
+    def txt(**kw):
+        return visual.TextStim(
+            win, height=LETTER_H, wrapWidth=WRAP_W, color="white", **kw
+        )
 
     show_instructions = txt(text="")
     show_role_txt = txt(text="", pos=(0, 0.65))
@@ -309,7 +319,7 @@ def main(
 
     # --- instruction & trigger (condition-dependent) ---
     cond = (exp_condition or "").strip().lower()
-    minutes = int(round(COMM_S / 60.0))
+    minutes = round(COMM_S / 60.0)
 
     persuade_instr_text_couple = (
         "Next, you will discuss a problem area in your relationship with your partner.\n"
@@ -574,7 +584,7 @@ def main(
             )
             event.clearEvents(eventType="keyboard")
 
-        remaining = int(round(COMM_S - comm_clock.getTime()))
+        remaining = round(COMM_S - comm_clock.getTime())
         show_timer.setText(f"{remaining} seconds")
         win.flip()
 
@@ -658,10 +668,9 @@ def main(
         conv_session.close()
         try:
             export_dir = recording_dir / "segments"
-            segments = conv_session.export_segments(export_dir)
-            print(f"Segments exported to {export_dir}: {segments}")
-        except Exception as exc:
-            print(f"Segment export failed: {exc}")
+            conv_session.export_segments(export_dir)
+        except Exception:
+            pass
 
     # save & close
     thisExp.saveAsWideText(filename + ".csv")
