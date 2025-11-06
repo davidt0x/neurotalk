@@ -304,6 +304,7 @@ def main(
         size=WIN_SIZE, color="black", fullscr=FULLSCR, units="norm", monitor=mon
     )
     win.mouseVisible = False
+
     def txt(**kw):
         return visual.TextStim(
             win, height=LETTER_H, wrapWidth=WRAP_W, color="white", **kw

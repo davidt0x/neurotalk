@@ -89,7 +89,7 @@ class WavRecorder(Recorder):
     def __init__(self, target: RecorderTarget):
         self._target = target
         self._target.path.parent.mkdir(parents=True, exist_ok=True)
-        self._wave = wave.open(str(self._target.path), "wb") # noqa: SIM115
+        self._wave = wave.open(str(self._target.path), "wb")  # noqa: SIM115
         self._wave.setnchannels(target.channels)
         self._wave.setsampwidth(target.sample_width_bytes)
         self._wave.setframerate(target.sample_rate_hz)

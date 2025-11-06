@@ -74,9 +74,7 @@ def load_assignment_row(csv_path: str, pid: str):
             f"Cannot find CSV at '{csv_file}' (abs: '{abs_path}'). "
             f"Current working directory: '{Path.cwd()}'."
         )
-        raise FileNotFoundError(
-            msg
-        )
+        raise FileNotFoundError(msg)
 
     # Detect delimiter to guard against ';' exports
     with csv_file.open(encoding="utf-8", newline="") as fpeek:
@@ -115,9 +113,7 @@ def load_assignment_row(csv_path: str, pid: str):
                 f"CSV is missing required columns: {sorted(missing)}. "
                 f"Found columns: {sorted(cols)}.{hint}"
             )
-            raise ValueError(
-                msg
-            )
+            raise ValueError(msg)
 
         found_row = None
         for row in rdr:
@@ -148,9 +144,7 @@ def load_assignment_row(csv_path: str, pid: str):
                 f"participant_id '{pid}' not found in {abs_path}. "
                 f"Note: your script expects zero-padded IDs like '011'."
             )
-            raise KeyError(
-                msg
-            )
+            raise KeyError(msg)
 
         return found_row
 
@@ -258,9 +252,7 @@ def main(pid: str, session: int, csv_path: str):
             f"No discussion topic found in CSV for participant {pid} session {session} "
             f"(expected column '{which}' to be non-empty)."
         )
-        raise ValueError(
-            msg
-        )
+        raise ValueError(msg)
     conflict_text = discussion_topic
     display_topic = canonical_topic(conflict_text)
 
@@ -345,6 +337,7 @@ def main(pid: str, session: int, csv_path: str):
         size=WIN_SIZE, color="black", fullscr=FULLSCR, units="norm", monitor=mon
     )
     win.mouseVisible = False
+
     def txt(**kw):
         return visual.TextStim(
             win, height=LETTER_H, wrapWidth=WRAP_W, color="white", **kw
