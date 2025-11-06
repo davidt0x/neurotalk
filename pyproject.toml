@@ -104,6 +104,14 @@ module = "neurotalk.*"
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
 
+[[tool.mypy.overrides]]
+module = ["numpy", "numpy.*", "sounddevice"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["pytest", "pytest.*"]
+ignore_missing_imports = true
+
 
 [tool.ruff]
 

@@ -1,19 +1,19 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
+from typing import Any, cast
 
 import numpy as np
 
-from neurotalk.audio import (
-    AudioConfig,
-    AudioInputWorker,
-    AudioOutputWorker,
-    AudioPacket,
-)
+from neurotalk.audio import AudioInputWorker, AudioOutputWorker, AudioPacket
+from neurotalk.config import AudioConfig
+
+Callback = Callable[[Any, int, Any, int], None]
 
 
 class RecordingStub:
-    def __init__(self):
+    def __init__(self) -> None:
         self.packets: list[AudioPacket] = []
         self.closed = False
 
@@ -25,7 +25,7 @@ class RecordingStub:
 
 
 class ErrorRecorder:
-    def __init__(self):
+    def __init__(self) -> None:
         self.closed = False
 
     def write(self, _packet: AudioPacket) -> None:
@@ -37,8 +37,8 @@ class ErrorRecorder:
 
 
 class FakeInputStream:
-    def __init__(self, callback):
-        self._callback = callback
+    def __init__(self, callback: Callback):
+        self._callback: Callback = callback
         self.started = False
         self.stopped = False
         self.closed = False
@@ -62,8 +62,8 @@ class FakeInputStream:
 
 
 class FakeOutputStream:
-    def __init__(self, callback, config: AudioConfig):
-        self._callback = callback
+    def __init__(self, callback: Callback, config: AudioConfig):
+        self._callback: Callback = callback
         self._config = config
         self.started = False
         self.stopped = False
@@ -81,27 +81,31 @@ class FakeOutputStream:
     def is_active(self) -> bool:
         return False
 
-    def emit(self):
+    def emit(self) -> bytes:
         frames = self._config.chunk_frames
         array = np.zeros((frames, self._config.channels), dtype=np.int16)
         self._callback(array, frames, None, 0)
-        return array.tobytes()
+        return cast(bytes, array.tobytes())
 
 
 class FakeStreamFactory:
-    def __init__(self):
+    def __init__(self) -> None:
         self.input_stream: FakeInputStream | None = None
         self.output_stream: FakeOutputStream | None = None
         self.terminated = False
         self.last_input_config: AudioConfig | None = None
 
-    def open_input_stream(self, config: AudioConfig, callback):
+    def open_input_stream(
+        self, config: AudioConfig, callback: Callback
+    ) -> FakeInputStream:
         self.last_input_config = config
         stream = FakeInputStream(callback)
         self.input_stream = stream
         return stream
 
-    def open_output_stream(self, config: AudioConfig, callback):
+    def open_output_stream(
+        self, config: AudioConfig, callback: Callback
+    ) -> FakeOutputStream:
         stream = FakeOutputStream(callback, config)
         self.output_stream = stream
         return stream
@@ -111,7 +115,7 @@ class FakeStreamFactory:
 
 
 def make_packet_with_size(worker: AudioOutputWorker) -> AudioPacket:
-    data = bytes(worker._expected_bytes)  # type: ignore[attr-defined]
+    data = bytes(worker._expected_bytes)
     return AudioPacket(pcm=data, counter=1, timestamp=time.time())
 
 
@@ -204,4 +208,4 @@ def test_audio_output_worker_disable_playback_and_error_capture():
     worker.close()
 
     assert worker.last_error is not None
-    assert chunk == worker._silence  # type: ignore[attr-defined]
+    assert chunk == worker._silence

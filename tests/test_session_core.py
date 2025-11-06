@@ -49,7 +49,7 @@ def test_sync_start_roundtrip():
     session._start_control_loop()
 
     # Remote responder thread.
-    received_sync_requests = queue.Queue()
+    received_sync_requests: queue.Queue[float] = queue.Queue()
     barrier = threading.Event()
 
     def responder():

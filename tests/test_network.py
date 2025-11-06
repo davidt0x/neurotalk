@@ -14,7 +14,11 @@ from neurotalk.network import (
 )
 
 
-def _make_config(local_ports, remote_ports, nat_role):
+def _make_config(
+    local_ports: tuple[int, int, int],
+    remote_ports: tuple[int, int, int],
+    nat_role: int,
+) -> NetworkConfig:
     return NetworkConfig(
         local_ports=local_ports,
         remote_hint=("127.0.0.1", *remote_ports),
@@ -24,10 +28,14 @@ def _make_config(local_ports, remote_ports, nat_role):
     )
 
 
-def _ensure_free_ports(base: int, count: int) -> tuple[int, ...]:
+def _ensure_free_ports(base: int, count: int) -> tuple[int, int, int]:
     """
     Try binding to sequential ports to ensure they're available. Useful for tests.
     """
+
+    if count != 3:
+        msg = "test helper only supports count=3 for typing simplicity"
+        raise ValueError(msg)
 
     sockets = []
     ports = []
@@ -40,7 +48,7 @@ def _ensure_free_ports(base: int, count: int) -> tuple[int, ...]:
     finally:
         for sock in sockets:
             sock.close()
-    return tuple(ports)
+    return ports[0], ports[1], ports[2]
 
 
 def test_hole_punch_loopback():

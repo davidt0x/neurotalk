@@ -13,7 +13,7 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol, cast
 
 import numpy as np
 import sounddevice as sd
@@ -70,7 +70,7 @@ class SoundDeviceInputStream:
         self._stream.close()
 
     def is_active(self) -> bool:
-        return self._stream.active
+        return bool(self._stream.active)
 
 
 class SoundDeviceOutputStream:
@@ -87,7 +87,7 @@ class SoundDeviceOutputStream:
         self._stream.close()
 
     def is_active(self) -> bool:
-        return self._stream.active
+        return bool(self._stream.active)
 
 
 class SoundDeviceStreamFactory:
@@ -150,7 +150,7 @@ class AudioInputWorker:
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
             return
-        if not self._stream:
+        if self._stream is None:
             self._stream = self._factory.open_input_stream(self.config, self._callback)
         self._running.set()
         self._thread = threading.Thread(
@@ -160,7 +160,7 @@ class AudioInputWorker:
 
     def stop(self) -> None:
         self._running.clear()
-        if self._stream:
+        if self._stream is not None:
             try:
                 self._stream.stop_stream()
             except Exception as exc:  # pragma: no cover
@@ -172,14 +172,14 @@ class AudioInputWorker:
             self._thread = None
 
     def _loop(self) -> None:
-        if not self._stream:
+        if self._stream is None:
             return
         try:
             self._stream.start_stream()
             while self._running.is_set() and self._stream.is_active():
                 time.sleep(0.05)
         finally:
-            if self._stream:
+            if self._stream is not None:
                 try:
                     self._stream.stop_stream()
                 except Exception as exc:  # pragma: no cover
@@ -189,7 +189,9 @@ class AudioInputWorker:
                         exc_info=exc,
                     )
 
-    def _callback(self, in_data, _frame_count, _time_info, status_flags) -> None:
+    def _callback(
+        self, in_data: Any, _frame_count: int, _time_info: Any, status_flags: int
+    ) -> None:
         if status_flags:
             logging.debug("AudioInput status: %s", status_flags)
         if isinstance(in_data, (bytes, bytearray)):
@@ -208,7 +210,7 @@ class AudioInputWorker:
 
     def close(self) -> None:
         self.stop()
-        if self._stream:
+        if self._stream is not None:
             try:
                 self._stream.close()
             finally:
@@ -242,7 +244,7 @@ class AudioOutputWorker:
 
     def _silence_bytes(self, frames: int) -> bytes:
         array = np.zeros((frames, self.config.channels), dtype=np.int16)
-        return array.tobytes()
+        return cast(bytes, array.tobytes())
 
     @property
     def _expected_bytes(self) -> int:  # used by tests
@@ -257,7 +259,7 @@ class AudioOutputWorker:
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
             return
-        if not self._stream:
+        if self._stream is None:
             self._stream = self._factory.open_output_stream(self.config, self._callback)
         self._running.set()
         self._thread = threading.Thread(
@@ -267,7 +269,7 @@ class AudioOutputWorker:
 
     def stop(self) -> None:
         self._running.clear()
-        if self._stream:
+        if self._stream is not None:
             try:
                 self._stream.stop_stream()
             except Exception as exc:  # pragma: no cover
@@ -279,14 +281,14 @@ class AudioOutputWorker:
             self._thread = None
 
     def _loop(self) -> None:
-        if not self._stream:
+        if self._stream is None:
             return
         try:
             self._stream.start_stream()
             while self._running.is_set() and self._stream.is_active():
                 time.sleep(0.05)
         finally:
-            if self._stream:
+            if self._stream is not None:
                 try:
                     self._stream.stop_stream()
                 except Exception as exc:  # pragma: no cover
@@ -296,7 +298,13 @@ class AudioOutputWorker:
                         exc_info=exc,
                     )
 
-    def _callback(self, out_data, frame_count, _time_info, status_flags) -> None:
+    def _callback(
+        self,
+        out_data: Any,
+        frame_count: int,
+        _time_info: Any,
+        status_flags: int,
+    ) -> None:
         if status_flags:
             logging.debug("AudioOutput status: %s", status_flags)
         try:
@@ -335,7 +343,7 @@ class AudioOutputWorker:
 
     def close(self) -> None:
         self.stop()
-        if self._stream:
+        if self._stream is not None:
             try:
                 self._stream.close()
             finally:

@@ -16,6 +16,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from types import TracebackType
 
 from neurotalk.audio import (
     AudioInputWorker,
@@ -24,17 +25,17 @@ from neurotalk.audio import (
     SoundDeviceStreamFactory,
     StreamFactory,
 )
-from neurotalk.config import SessionConfig
+from neurotalk.config import NetworkConfig, SessionConfig
 from neurotalk.control import (
     DEBUG_READY,
     DEBUG_STOP,
     THANKS,
     ControlMessageType,
+    SyncTimestamp,
     TurnPassPayload,
     classify_payload,
 )
 from neurotalk.network import (
-    NetworkConfig,
     SocketBundle,
     configure_nonblocking,
     flush_pending,
@@ -104,14 +105,19 @@ class ConversationSession:
     def __enter__(self) -> ConversationSession:
         return self
 
-    def __exit__(self, exc_type, exc, tb) -> None:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
         self.close()
 
     # ---- lifecycle -------------------------------------------------------
     def connect(self) -> None:
         """Create sockets, punch through NAT, and begin control polling."""
 
-        if self.state.sockets:
+        if self.state.sockets is not None:
             return
 
         net_cfg: NetworkConfig = self.config.network
@@ -211,7 +217,7 @@ class ConversationSession:
     def send_turn_pass(self, payload: TurnPassPayload) -> None:
         logger.debug("send_turn_pass attempting send: %s", payload)
         sockets = self.state.sockets
-        if not sockets:
+        if sockets is None:
             msg = "Session not connected"
             raise RuntimeError(msg)
         remote_ip, _, _, port_comm = sockets.remote
@@ -321,7 +327,7 @@ class ConversationSession:
         """
 
         sockets = self.state.sockets
-        if not sockets:
+        if sockets is None:
             msg = "Session not connected"
             raise RuntimeError(msg)
 
@@ -339,8 +345,10 @@ class ConversationSession:
                 continue
             if msg_type == ControlMessageType.SYNC_REQUEST:
                 sockets.control.sendto(b"syncTimeNow", (remote_ip, port_comm))
-            elif msg_type == ControlMessageType.SYNC_TIMESTAMP:
-                partner_time = payload.value  # type: ignore[assignment]
+            elif msg_type == ControlMessageType.SYNC_TIMESTAMP and isinstance(
+                payload, SyncTimestamp
+            ):
+                partner_time = payload.value
 
         if partner_time is None:
             msg = "Failed to obtain partner timestamp during sync"
@@ -430,8 +438,9 @@ class ConversationSession:
                     break
 
         # Ensure the control loop remains active after debug negotiations.
+        thread = self._control_thread
         if not self._control_running.is_set() or not (
-            self._control_thread and self._control_thread.is_alive()
+            thread is not None and thread.is_alive()
         ):
             self._start_control_loop()
 
@@ -443,7 +452,7 @@ class ConversationSession:
 
         audio_cfg = self.config.audio
 
-        if self.state.stream_factory:
+        if self.state.stream_factory is not None:
             factory = self.state.stream_factory
             owns_factory = self.state.owns_stream_factory
         else:
@@ -492,7 +501,7 @@ class ConversationSession:
 
     def _handle_outbound_packet(self, packet: AudioPacket) -> None:
         sockets = self.state.sockets
-        if not sockets:
+        if sockets is None:
             return
         payload = self._encode_packet(packet)
         remote_ip, port_in, _, _ = sockets.remote
@@ -530,7 +539,7 @@ class ConversationSession:
                 )
                 continue
             output = self.state.output_worker
-            if output:
+            if output is not None:
                 output.enqueue(packet)
             else:
                 logger.debug("_receive_audio_loop missing output worker for packet")
@@ -560,14 +569,14 @@ class ConversationSession:
         self.state.receiver_thread = None
         self.state.receiver_running = None
 
-        if self.state.input_worker:
+        if self.state.input_worker is not None:
             self.state.input_worker.close()
             self.state.input_worker = None
-        if self.state.output_worker:
+        if self.state.output_worker is not None:
             self.state.output_worker.close()
             self.state.output_worker = None
 
-        if self.state.stream_factory:
+        if self.state.stream_factory is not None:
             if self.state.owns_stream_factory:
                 try:
                     self.state.stream_factory.terminate()
@@ -578,11 +587,11 @@ class ConversationSession:
             self.state.stream_factory = None
             self.state.owns_stream_factory = False
 
-        if self.state.local_recorder:
+        if self.state.local_recorder is not None:
             self.state.local_recorder.stop_segment()
             if not getattr(self.state.local_recorder, "_closed", False):
                 self.state.local_recorder.close()
-        if self.state.remote_recorder:
+        if self.state.remote_recorder is not None:
             self.state.remote_recorder.stop_segment()
             if not getattr(self.state.remote_recorder, "_closed", False):
                 self.state.remote_recorder.close()

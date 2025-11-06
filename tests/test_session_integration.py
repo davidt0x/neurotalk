@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any, cast
 
 import numpy as np
 
@@ -10,10 +12,12 @@ from neurotalk.config import AudioConfig, NetworkConfig, RecordingConfig, Sessio
 from neurotalk.control import ControlMessageType
 from neurotalk.session import ConversationSession
 
+Callback = Callable[[Any, int, Any, int], None]
+
 
 class FakeInputStream:
-    def __init__(self, callback):
-        self._callback = callback
+    def __init__(self, callback: Callback):
+        self._callback: Callback = callback
 
     def start_stream(self) -> None:
         pass
@@ -34,8 +38,8 @@ class FakeInputStream:
 
 
 class FakeOutputStream:
-    def __init__(self, callback, chunk_bytes: int, channels: int):
-        self._callback = callback
+    def __init__(self, callback: Callback, chunk_bytes: int, channels: int):
+        self._callback: Callback = callback
         self.chunk_bytes = chunk_bytes
         self.channels = channels
 
@@ -55,22 +59,26 @@ class FakeOutputStream:
         frames = self.chunk_bytes // 2
         array = np.zeros((frames, self.channels), dtype=np.int16)
         self._callback(array, frames, None, 0)
-        return array.tobytes()
+        return cast(bytes, array.tobytes())
 
 
 class FakeStreamFactory:
-    def __init__(self):
+    def __init__(self) -> None:
         self.input_stream: FakeInputStream | None = None
         self.output_stream: FakeOutputStream | None = None
         self.chunk_bytes = 0
 
-    def open_input_stream(self, config: AudioConfig, callback):
+    def open_input_stream(
+        self, config: AudioConfig, callback: Callback
+    ) -> FakeInputStream:
         self.chunk_bytes = config.chunk_frames * config.channels * 2
         stream = FakeInputStream(callback)
         self.input_stream = stream
         return stream
 
-    def open_output_stream(self, config: AudioConfig, callback):
+    def open_output_stream(
+        self, config: AudioConfig, callback: Callback
+    ) -> FakeOutputStream:
         self.chunk_bytes = config.chunk_frames * config.channels * 2
         stream = FakeOutputStream(callback, self.chunk_bytes, config.channels)
         self.output_stream = stream
@@ -119,7 +127,7 @@ def teardown_session(session: ConversationSession) -> None:
     session.close()
 
 
-def test_end_to_end(tmp_path):
+def test_end_to_end(tmp_path: Path) -> None:
     ports_a = (45002, 45001, 45003)
     ports_b = (46002, 46001, 46003)
 
@@ -147,10 +155,12 @@ def test_end_to_end(tmp_path):
 
         sample = b"\x01\x02" * 4
         session_a.start_segment("local_turn")
+        assert factory_a.input_stream is not None
         factory_a.input_stream.emit(sample)
 
         chunk = b""
         for _ in range(20):
+            assert factory_b.output_stream is not None
             chunk = factory_b.output_stream.emit()
             if chunk.startswith(sample):
                 break
@@ -159,14 +169,18 @@ def test_end_to_end(tmp_path):
         baseline_chunk = chunk
 
         session_a.enable_transmit(False)
+        assert factory_a.input_stream is not None
         factory_a.input_stream.emit(sample)
+        assert factory_b.output_stream is not None
         chunk_after_disable = factory_b.output_stream.emit()
         assert chunk_after_disable == baseline_chunk
 
         session_a.enable_transmit(True)
+        assert factory_a.input_stream is not None
         factory_a.input_stream.emit(sample)
         chunk_after_enable = b""
         for _ in range(20):
+            assert factory_b.output_stream is not None
             chunk_after_enable = factory_b.output_stream.emit()
             if chunk_after_enable.startswith(sample):
                 break
