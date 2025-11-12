@@ -84,10 +84,16 @@ testpaths = [
 
 [tool.coverage]
 run.source = ["neurotalk"]
+run.omit = [
+  "noxfile.py",
+]
 report.exclude_also = [
   '\.\.\.',
   'if typing.TYPE_CHECKING:',
 ]
+
+
+
 
 [tool.mypy]
 files = ["src", "tests"]
