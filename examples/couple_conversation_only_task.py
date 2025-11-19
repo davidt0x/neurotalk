@@ -22,6 +22,7 @@ from psychopy import core, data, event, logging, monitors, visual
 from neurotalk.config import AudioConfig, NetworkConfig, RecordingConfig, SessionConfig
 from neurotalk.control import ControlMessageType
 from neurotalk.session import ConversationSession
+from neurotalk.turns import TurnEventSource, TurnManager, TurnRole
 
 # ---------- config ----------
 SCANNER = None
@@ -191,11 +192,6 @@ def log_comm_press(
     thisExp.nextEntry()
 
 
-def set_mode(session: ConversationSession, *, speaking: bool) -> None:
-    session.enable_transmit(speaking)
-    session.enable_receive(not speaking)
-
-
 # ----------------------------------------------------
 def main(
     *,
@@ -261,6 +257,7 @@ def main(
     conv_session: ConversationSession | None = None
 
     conv_session = ConversationSession(session_cfg)
+    turn_manager = TurnManager(conv_session)
     conv_session.connect()
     conv_session.enable_transmit(False)
     conv_session.enable_receive(False)
@@ -457,44 +454,9 @@ def main(
     )
     fLog.flush()
 
-    speaking = role == first_speaker
-    local_segment_active = False
-    remote_segment_active = False
-    local_segment_counter = 0
-    remote_segment_counter = 0
-
-    def begin_local_segment() -> None:
-        nonlocal local_segment_active, local_segment_counter
-        if not local_segment_active:
-            local_segment_counter += 1
-            conv_session.start_segment(
-                f"local_turn{local_segment_counter:02d}", target="local"
-            )
-            local_segment_active = True
-
-    def end_local_segment() -> None:
-        nonlocal local_segment_active
-        if local_segment_active:
-            conv_session.stop_segment(target="local")
-            local_segment_active = False
-
-    def begin_remote_segment() -> None:
-        nonlocal remote_segment_active, remote_segment_counter
-        if not remote_segment_active:
-            remote_segment_counter += 1
-            conv_session.start_segment(
-                f"remote_turn{remote_segment_counter:02d}", target="remote"
-            )
-            remote_segment_active = True
-
-    def end_remote_segment() -> None:
-        nonlocal remote_segment_active
-        if remote_segment_active:
-            conv_session.stop_segment(target="remote")
-            remote_segment_active = False
-
-    role_text = "YOUR TURN TO SPEAK" if speaking else "YOUR TURN TO LISTEN"
-    pass_text = "Press '1' to pass the mic." if speaking else ""
+    initial_role = TurnRole.SPEAKER if role == first_speaker else TurnRole.LISTENER
+    role_text = "YOUR TURN TO SPEAK" if initial_role.is_speaker else "YOUR TURN TO LISTEN"
+    pass_text = "Press '1' to pass the mic." if initial_role.is_speaker else ""
     show_topic.setText(f"Problem topic: {conflict_text}")
 
     show_role_txt.setText(role_text)
@@ -505,11 +467,7 @@ def main(
     show_topic.setAutoDraw(True)
 
     comm_clock = core.Clock()
-    set_mode(conv_session, speaking=speaking)
-    if speaking:
-        begin_local_segment()
-    else:
-        begin_remote_segment()
+    turn_manager.start(initial_role)
 
     # Main CSV: conversation_start
     thisExp.addData("dyad", dyad)
@@ -533,40 +491,34 @@ def main(
     while comm_clock.getTime() < COMM_S:
         while True:
             try:
-                msg_type, _ = conv_session.next_control_event(timeout=0.0)
+                msg_type, payload = conv_session.next_control_event(timeout=0.0)
             except queue.Empty:
                 break
-            if msg_type == ControlMessageType.TURN_PASS and not speaking:
-                end_remote_segment()
-                begin_local_segment()
-                set_mode(conv_session, speaking=True)
-                speaking = True
-                show_role_txt.setText("YOUR TURN TO SPEAK")
-                show_pass.setText("Press '1' to pass the mic.")
-                toggled_role = "speaker"
-                fLog.write(
-                    f"{dyad},{session},{SESSION_TYPE},{exp_condition},{toggled_role},{time.time()},{run_clock.getTime()},{comm_clock.getTime()},{conflict_text},{first_speaker},{role}\n"
-                )
-                fLog.flush()
-                log_comm_press(
-                    thisExp,
-                    event_name="partner_pass",
-                    role_label=toggled_role,
-                    run_clock=run_clock,
-                    phase_clock=comm_clock,
-                    dyad=dyad,
-                    session=session,
-                    exp_condition=exp_condition,
-                    conflict_text=conflict_text,
-                    first_speaker=first_speaker,
-                    participant_role=role,
-                )
-            else:
+            turn_event = turn_manager.handle_control_event(msg_type, payload)
+            if not turn_event or turn_event.source is not TurnEventSource.REMOTE_PASS:
                 continue
+            show_role_txt.setText("YOUR TURN TO SPEAK")
+            show_pass.setText("Press '1' to pass the mic.")
+            toggled_role = "speaker"
+            fLog.write(
+                f"{dyad},{session},{SESSION_TYPE},{exp_condition},{toggled_role},{time.time()},{run_clock.getTime()},{comm_clock.getTime()},{conflict_text},{first_speaker},{role}\n"
+            )
+            fLog.flush()
+            log_comm_press(
+                thisExp,
+                event_name="partner_pass",
+                role_label=toggled_role,
+                run_clock=run_clock,
+                phase_clock=comm_clock,
+                dyad=dyad,
+                session=session,
+                exp_condition=exp_condition,
+                conflict_text=conflict_text,
+                first_speaker=first_speaker,
+                participant_role=role,
+            )
 
-        current_role_label = (
-            "speaker" if show_role_txt.text == "YOUR TURN TO SPEAK" else "listener"
-        )
+        current_role_label = "speaker" if turn_manager.is_speaker else "listener"
         keys_ttl = event.getKeys([TTL_KEY])
         if keys_ttl and (TTL_KEY in keys_ttl):
             log_ttl(
@@ -598,16 +550,14 @@ def main(
                 win.close()
                 core.quit()
             elif key == KEY_PASS:
-                if not speaking:
+                if not turn_manager.is_speaker:
                     continue
                 time_here = time.time()
                 run_here = run_clock.getTime()
                 comm_here = comm_clock.getTime()
-                end_local_segment()
-                conv_session.pass_turn(run_time=run_here, phase_time=comm_here)
-                set_mode(conv_session, speaking=False)
-                begin_remote_segment()
-                speaking = False
+                turn_manager.pass_turn(
+                    run_time=run_here, phase_time=comm_here, wall_time=time_here
+                )
                 show_role_txt.setText("YOUR TURN TO LISTEN")
                 show_pass.setText("")
                 toggled_role = "listener"
@@ -629,9 +579,7 @@ def main(
                     participant_role=role,
                 )
 
-    end_local_segment()
-    end_remote_segment()
-    set_mode(conv_session, speaking=False)
+    turn_manager.stop()
 
     # stop drawing
 

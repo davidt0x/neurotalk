@@ -22,6 +22,7 @@ from .records import (
     WavRecorder,
 )
 from .session import ConversationSession
+from .turns import TurnEvent, TurnEventSource, TurnManager, TurnRole
 
 __all__ = [
     "AudioConfig",
@@ -35,6 +36,10 @@ __all__ = [
     "SegmentMarker",
     "SessionConfig",
     "TelemetryReporter",
+    "TurnEvent",
+    "TurnEventSource",
+    "TurnManager",
+    "TurnRole",
     "TurnPassPayload",
     "WavRecorder",
     "__version__",
