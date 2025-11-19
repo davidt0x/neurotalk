@@ -102,6 +102,12 @@ class WavRecorder(Recorder):
     def segments(self) -> Sequence[SegmentMarker]:
         return tuple(self._segments)
 
+    @property
+    def path(self) -> Path:
+        """Absolute path to the WAV file on disk."""
+
+        return self._target.path
+
     def write(self, packet: AudioPacket) -> None:
         if self._closed:
             msg = "Recorder already closed"
@@ -173,3 +179,84 @@ class WavRecorder(Recorder):
                     out.writeframes(frames)
                 outputs.append(out_path)
         return outputs
+
+
+def mix_turn_recordings(
+    *,
+    destination: Path,
+    local_recorder: WavRecorder,
+    remote_recorder: WavRecorder,
+) -> Path:
+    """
+    Combine alternating local/remote segments into a single WAV file.
+
+    The function assumes that local and remote segments are mutually exclusive
+    (as enforced by :class:`neurotalk.turns.TurnManager`). Gaps between segments
+    are filled with silence so that the mixed track matches the full recording
+    duration.
+    """
+
+    destination.parent.mkdir(parents=True, exist_ok=True)
+
+    if not (local_recorder.segments or remote_recorder.segments):
+        msg = "Cannot mix recordings without segment metadata"
+        raise ValueError(msg)
+
+    with contextlib.closing(wave.open(str(local_recorder.path), "rb")) as local_wav, contextlib.closing(
+        wave.open(str(remote_recorder.path), "rb")
+    ) as remote_wav, contextlib.closing(wave.open(str(destination), "wb")) as mix_wav:
+        nchannels = local_wav.getnchannels()
+        sampwidth = local_wav.getsampwidth()
+        framerate = local_wav.getframerate()
+        mix_wav.setnchannels(nchannels)
+        mix_wav.setsampwidth(sampwidth)
+        mix_wav.setframerate(framerate)
+        frame_bytes = sampwidth * nchannels
+
+        def iter_segments():
+            for seg in local_recorder.segments:
+                if seg.start_frame is None or seg.end_frame is None:
+                    continue
+                yield (seg.start_frame, seg.end_frame, "local")
+            for seg in remote_recorder.segments:
+                if seg.start_frame is None or seg.end_frame is None:
+                    continue
+                yield (seg.start_frame, seg.end_frame, "remote")
+
+        segments = sorted(iter_segments(), key=lambda item: item[0])
+        total_frames = max(local_wav.getnframes(), remote_wav.getnframes())
+        write_position = 0
+
+        def write_silence(frames: int) -> None:
+            remaining = frames
+            while remaining > 0:
+                step = min(4096, remaining)
+                mix_wav.writeframes(b"\x00" * (step * frame_bytes))
+                remaining -= step
+
+        for start_frame, end_frame, source in segments:
+            start = max(start_frame, write_position)
+            end = max(end_frame, start)
+            if start > write_position:
+                write_silence(start - write_position)
+                write_position = start
+            frames = end - start
+            if frames <= 0:
+                continue
+            reader = local_wav if source == "local" else remote_wav
+            reader.setpos(start)
+            remaining = frames
+            while remaining > 0:
+                step = min(4096, remaining)
+                data = reader.readframes(step)
+                expected = step * frame_bytes
+                if len(data) < expected:
+                    data = data + (b"\x00" * (expected - len(data)))
+                mix_wav.writeframes(data)
+                remaining -= step
+            write_position += frames
+
+        if total_frames > write_position:
+            write_silence(total_frames - write_position)
+
+    return destination

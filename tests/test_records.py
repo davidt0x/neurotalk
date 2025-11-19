@@ -4,7 +4,7 @@ import time
 import wave
 
 from neurotalk.audio import AudioPacket
-from neurotalk.records import RecorderTarget, WavRecorder
+from neurotalk.records import RecorderTarget, WavRecorder, mix_turn_recordings
 
 
 def make_packet(data: bytes) -> AudioPacket:
@@ -83,3 +83,52 @@ def test_wav_recorder_split_segments(tmp_path):
         assert wav.getnframes() == 8
     with wave.open(str(outputs[1]), "rb") as wav:
         assert wav.getnframes() == 16
+
+
+def test_mix_turn_recordings(tmp_path):
+    local_target = RecorderTarget(path=tmp_path / "local.wav", channels=1, sample_rate_hz=16000)
+    remote_target = RecorderTarget(path=tmp_path / "remote.wav", channels=1, sample_rate_hz=16000)
+    local = WavRecorder(local_target)
+    remote = WavRecorder(remote_target)
+
+    silence = b"\x00\x00" * 5
+    local_voice = b"\x01\x02" * 10
+    remote_voice = b"\x10\x20" * 10
+
+    # leading silence
+    local.write(make_packet(silence))
+    remote.write(make_packet(silence))
+
+    # local turn
+    local.start_segment("local_turn1")
+    local.write(make_packet(local_voice))
+    local.stop_segment()
+    remote.write(make_packet(b"\x00\x00" * 10))
+
+    # gap
+    local.write(make_packet(silence))
+    remote.write(make_packet(silence))
+
+    # remote turn
+    remote.start_segment("remote_turn1")
+    remote.write(make_packet(remote_voice))
+    remote.stop_segment()
+    local.write(make_packet(b"\x00\x00" * 10))
+
+    local.close()
+    remote.close()
+
+    out_path = tmp_path / "mixed.wav"
+    mix_turn_recordings(destination=out_path, local_recorder=local, remote_recorder=remote)
+
+    with wave.open(str(out_path), "rb") as wav:
+        frames = wav.readframes(wav.getnframes())
+    assert frames[: len(silence)] == silence
+    assert frames[len(silence) : len(silence) + len(local_voice)] == local_voice
+    after_local = len(silence) + len(local_voice)
+    assert (
+        frames[after_local : after_local + len(silence)]
+        == silence
+    )
+    after_gap = after_local + len(silence)
+    assert frames[after_gap : after_gap + len(remote_voice)] == remote_voice

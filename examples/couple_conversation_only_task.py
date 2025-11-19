@@ -210,6 +210,8 @@ def main(
     nat_role: int | None,
     chunk_frames: int,
     sample_rate: int,
+    mixdown: bool = True,
+    mix_track: str | None,
 ):
     if session not in (1, 2):
         msg = "Session must be 1 or 2"
@@ -246,7 +248,8 @@ def main(
         stun_servers=(),
     )
     audio = AudioConfig(sample_rate_hz=sample_rate, chunk_frames=chunk_frames)
-    recording = RecordingConfig(directory=recording_dir)
+    mix_path = Path(mix_track) if mix_track else None
+    recording = RecordingConfig(directory=recording_dir, mix_track=mix_path)
     session_cfg = SessionConfig(
         participant_id=pid,
         role=role,
@@ -618,8 +621,15 @@ def main(
         try:
             export_dir = recording_dir / "segments"
             conv_session.export_segments(export_dir)
-        except Exception:
-            pass
+        except Exception as exc:
+            logging.error(f"Failed to export segments: {exc}")
+        if mixdown:
+            try:
+                mix_path = conv_session.export_mix_track()
+                if mix_path:
+                    logging.info(f"Mixed audio written to {mix_path}")
+            except Exception as exc:
+                logging.error(f"Failed to generate mix track: {exc}")
 
     # save & close
     thisExp.saveAsWideText(filename + ".csv")
@@ -629,8 +639,8 @@ def main(
     try:
         fLog.close()
         fTTL.close()
-    except Exception:
-        pass
+    except Exception as exc:
+        logging.error(f"Failed to close log files: {exc}")
     win.close()
     core.quit()
 
@@ -701,6 +711,18 @@ if __name__ == "__main__":
     ap.add_argument(
         "--sample-rate", type=int, default=16000, help="Audio sample rate (Hz)"
     )
+    ap.add_argument(
+        "--mixdown",
+        default=True,
+        action=argparse.BooleanOptionalAction,
+        help="Produce a mixed speaker/listener WAV file (use --no-mixdown to skip)",
+    )
+    ap.add_argument(
+        "--mix-track",
+        type=str,
+        default=None,
+        help="Filename (relative to --record-dir) for the mixed audio track",
+    )
     args = ap.parse_args()
     main(
         pid=args.pid,
@@ -718,4 +740,6 @@ if __name__ == "__main__":
         nat_role=args.nat_role,
         chunk_frames=args.chunk_frames,
         sample_rate=args.sample_rate,
+        mixdown=args.mixdown,
+        mix_track=args.mix_track,
     )

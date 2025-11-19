@@ -43,7 +43,7 @@ from neurotalk.network import (
     open_sockets,
     run_stun_diagnostics,
 )
-from neurotalk.records import RecorderTarget, WavRecorder
+from neurotalk.records import RecorderTarget, WavRecorder, mix_turn_recordings
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +65,7 @@ class SessionState:
     receiver_running: threading.Event | None = None
     local_recorder: WavRecorder | None = None
     remote_recorder: WavRecorder | None = None
+    mix_path: Path | None = None
     owns_stream_factory: bool = False
 
 
@@ -309,6 +310,30 @@ class ConversationSession:
                 paths = recorder.split_segments(role_dir, pattern=role_pattern)
                 results[role] = paths
         return results
+
+    def export_mix_track(self, destination: Path | None = None) -> Path | None:
+        """
+        Write a mixed-down WAV that alternates between speaker and listener audio.
+
+        Returns the generated file path, or ``None`` when mixdown cannot be produced.
+        """
+
+        local = self.state.local_recorder
+        remote = self.state.remote_recorder
+        if local is None or remote is None:
+            return None
+        mix_path = destination or self.state.mix_path
+        if mix_path is None:
+            return None
+
+        if not getattr(local, "_closed", False):
+            local.close()
+        if not getattr(remote, "_closed", False):
+            remote.close()
+
+        return mix_turn_recordings(
+            destination=mix_path, local_recorder=local, remote_recorder=remote
+        )
 
     def enable_transmit(self, enabled: bool) -> None:
         self.state.transmit_enabled = enabled
@@ -621,6 +646,13 @@ class ConversationSession:
             remote_path = (
                 remote_path if remote_path.is_absolute() else directory / remote_path
             )
+
+        mix_path = recording_cfg.mix_track
+        if mix_path is None:
+            mix_path = directory / f"{base_name}_mix.wav"
+        else:
+            mix_path = mix_path if mix_path.is_absolute() else directory / mix_path
+        self.state.mix_path = mix_path
 
         local_target = RecorderTarget(
             path=local_path,
