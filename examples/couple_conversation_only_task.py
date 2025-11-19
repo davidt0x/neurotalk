@@ -311,6 +311,7 @@ def main(
         )
 
     show_instructions = txt(text="")
+    show_sync = txt(text="Syncing start time with your partner...")
     show_role_txt = txt(text="", pos=(0, 0.65))
     show_pass = txt(text="", pos=(0, 0.05))
     show_timer = txt(text="", pos=(0, -0.70))
@@ -419,11 +420,21 @@ def main(
         participant_role=role,
     )
 
-    # brief blank
+    # brief blank, synchronized start
+    show_sync.draw()
+    win.flip()
+    try:
+        start_time_common = conv_session.sync_start(INSTR_BLANK_S)
+        logging.info(f"Synced conversation start for {start_time_common}")
+    except Exception as exc:
+        logging.error(f"Failed to sync start time; falling back to local timer: {exc}")
+        start_time_common = time.time() + INSTR_BLANK_S
+
     show_blank.draw()
     win.flip()
     blank_clock = core.Clock()
-    while blank_clock.getTime() < INSTR_BLANK_S:
+    blank_clock.reset()
+    while time.time() < start_time_common:
         keys = event.getKeys([TTL_KEY, KEY_QUIT])
         if keys:
             if TTL_KEY in keys:
@@ -433,7 +444,7 @@ def main(
                     "",
                     "blank",
                     run_clock,
-                    None,
+                    blank_clock,
                     conflict_text,
                     first_speaker,
                     role,
