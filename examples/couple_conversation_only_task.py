@@ -643,8 +643,9 @@ def main(
                 logging.error(f"Failed to generate mix track: {exc}")
 
     # save & close
-    thisExp.saveAsWideText(filename + ".csv")
-    thisExp.saveAsPickle(filename)
+    filename_str = str(filename)
+    thisExp.saveAsWideText(filename_str + ".csv")
+    thisExp.saveAsPickle(filename_str)
     thisExp.abort()
     logging.flush()
     try:
