@@ -71,7 +71,7 @@ def test_sync_start_roundtrip():
     thread.start()
 
     try:
-        delay = 1.5
+        delay = 10.0  # seconds
         agreed = session.sync_start(delay_seconds=delay)
     finally:
         barrier.set()

@@ -423,12 +423,12 @@ def main(
     # brief blank, synchronized start
     show_sync.draw()
     win.flip()
-    try:
-        start_time_common = conv_session.sync_start(INSTR_BLANK_S)
-        logging.info(f"Synced conversation start for {start_time_common}")
-    except Exception as exc:
-        logging.error(f"Failed to sync start time; falling back to local timer: {exc}")
-        start_time_common = time.time() + INSTR_BLANK_S
+    start_time_common = conv_session.sync_start(INSTR_BLANK_S)
+    logging.info(f"Synced conversation start for {start_time_common}")
+    fLog.write(
+        f"{dyad},{session},{SESSION_TYPE},{exp_condition},sync_start,{start_time_common},{run_clock.getTime()},,{conflict_text},{first_speaker},{role}\n"
+    )
+    fLog.flush()
 
     show_blank.draw()
     win.flip()
