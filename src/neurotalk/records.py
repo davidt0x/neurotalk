@@ -202,9 +202,11 @@ def mix_turn_recordings(
         msg = "Cannot mix recordings without segment metadata"
         raise ValueError(msg)
 
-    with contextlib.closing(wave.open(str(local_recorder.path), "rb")) as local_wav, contextlib.closing(
-        wave.open(str(remote_recorder.path), "rb")
-    ) as remote_wav, contextlib.closing(wave.open(str(destination), "wb")) as mix_wav:
+    with (
+        contextlib.closing(wave.open(str(local_recorder.path), "rb")) as local_wav,
+        contextlib.closing(wave.open(str(remote_recorder.path), "rb")) as remote_wav,
+        contextlib.closing(wave.open(str(destination), "wb")) as mix_wav,
+    ):
         nchannels = local_wav.getnchannels()
         sampwidth = local_wav.getsampwidth()
         framerate = local_wav.getframerate()

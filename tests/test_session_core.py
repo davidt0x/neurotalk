@@ -87,3 +87,48 @@ def test_sync_start_roundtrip():
     # Ensure the agreed time is at least delay seconds in the future from when remote sent response.
     partner_time = received_sync_requests.get()
     assert agreed >= partner_time + delay - 0.1
+
+
+def test_control_loop_auto_sync_response():
+    """Control loop should emit timestamps when sync requests arrive."""
+
+    control_local = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    control_remote = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    control_local.bind(("127.0.0.1", 0))
+    control_remote.bind(("127.0.0.1", 0))
+
+    inbound_local = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    outbound_local = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    inbound_local.bind(("127.0.0.1", 0))
+    outbound_local.bind(("127.0.0.1", 0))
+
+    bundle = SocketBundle(
+        inbound=inbound_local,
+        outbound=outbound_local,
+        control=control_local,
+        remote=(
+            "127.0.0.1",
+            inbound_local.getsockname()[1],
+            outbound_local.getsockname()[1],
+            control_remote.getsockname()[1],
+        ),
+    )
+
+    session = ConversationSession(
+        SessionConfig(participant_id="001", role="A", network=NetworkConfig())
+    )
+    session.state.sockets = bundle
+    session._start_control_loop()
+
+    try:
+        control_remote.sendto(SYNC_REQUEST, control_local.getsockname())
+        control_remote.settimeout(0.5)
+        data, _ = control_remote.recvfrom(1024)
+    finally:
+        session._stop_control_loop()
+        control_local.close()
+        control_remote.close()
+        inbound_local.close()
+        outbound_local.close()
+
+    assert len(data) == 8  # serialized SyncTimestamp

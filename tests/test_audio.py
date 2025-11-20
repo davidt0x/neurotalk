@@ -6,7 +6,12 @@ from typing import Any, cast
 
 import numpy as np
 
-from neurotalk.audio import AudioInputWorker, AudioOutputWorker, AudioPacket
+from neurotalk.audio import (
+    AudioInputWorker,
+    AudioOutputWorker,
+    AudioPacket,
+    MockStreamFactory,
+)
 from neurotalk.config import AudioConfig
 
 Callback = Callable[[Any, int, Any, int], None]
@@ -209,3 +214,39 @@ def test_audio_output_worker_disable_playback_and_error_capture():
 
     assert worker.last_error is not None
     assert chunk == worker._silence
+
+
+def test_mock_stream_factory_generates_packets():
+    packets: list[AudioPacket] = []
+
+    def on_packet(packet: AudioPacket) -> None:
+        packets.append(packet)
+
+    worker = AudioInputWorker(
+        AudioConfig(chunk_frames=128), on_packet, stream_factory=MockStreamFactory()
+    )
+    worker.start()
+    time.sleep(0.05)
+    worker.close()
+
+    assert packets
+
+
+def test_mock_output_stream_records_data():
+    recorder = RecordingStub()
+    worker = AudioOutputWorker(
+        AudioConfig(chunk_frames=128),
+        recorder=recorder,
+        stream_factory=MockStreamFactory(),
+    )
+    worker.start()
+    try:
+        packet = make_packet_with_size(worker)
+        worker.enqueue(packet)
+        deadline = time.time() + 0.2
+        while not recorder.packets and time.time() < deadline:
+            time.sleep(0.01)
+    finally:
+        worker.close()
+
+    assert recorder.packets

@@ -22,6 +22,7 @@ from neurotalk.audio import (
     AudioInputWorker,
     AudioOutputWorker,
     AudioPacket,
+    MockStreamFactory,
     SoundDeviceStreamFactory,
     StreamFactory,
 )
@@ -192,10 +193,23 @@ class ConversationSession:
                 )
                 continue
             logger.debug("control_loop received %s", msg_type)
+            self._auto_respond_control(msg_type)
             self._control_queue.put((msg_type, payload))
             if self._control_handler:
                 self._control_handler(msg_type, payload)
         logger.debug("control_loop exiting")
+
+    def _auto_respond_control(self, msg_type: ControlMessageType) -> None:
+        if msg_type is ControlMessageType.SYNC_REQUEST:
+            sockets = self.state.sockets
+            if sockets is None:
+                return
+            remote_ip, _, _, port_comm = sockets.remote
+            timestamp = SyncTimestamp(time.time()).pack()
+            try:
+                sockets.control.sendto(timestamp, (remote_ip, port_comm))
+            except OSError as exc:
+                logger.debug("sync timestamp send failed: %s", exc, exc_info=exc)
 
     # ---- control helpers -------------------------------------------------
     def next_control_event(
@@ -481,8 +495,16 @@ class ConversationSession:
             factory = self.state.stream_factory
             owns_factory = self.state.owns_stream_factory
         else:
-            factory = self._stream_factory_override or SoundDeviceStreamFactory()
-            owns_factory = self._stream_factory_override is None
+            if self._stream_factory_override is not None:
+                factory = self._stream_factory_override
+                owns_factory = False
+            else:
+                factory = (
+                    MockStreamFactory()
+                    if audio_cfg.mock_devices
+                    else SoundDeviceStreamFactory()
+                )
+                owns_factory = True
             self.state.stream_factory = factory
             self.state.owns_stream_factory = owns_factory
 

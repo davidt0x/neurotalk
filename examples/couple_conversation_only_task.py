@@ -32,6 +32,7 @@ WRAP_W = 2
 
 INSTR_BLANK_S = 10.0  # blank after instruction/trigger, before conversation UI
 COMM_S = 30.0
+SYNC_START_LAG = 12.0  # lead-in before instructions to sync presentation timing
 
 KEY_PASS = "1"
 KEY_QUIT = "escape"
@@ -211,6 +212,8 @@ def main(
     sample_rate: int,
     mixdown: bool = True,
     mix_track: str | None,
+    mock_audio: bool = False,
+    log_level: str = "WARNING",
 ):
     if session not in (1, 2):
         msg = "Session must be 1 or 2"
@@ -246,7 +249,11 @@ def main(
         punch_timeout_s=10.0,
         stun_servers=(),
     )
-    audio = AudioConfig(sample_rate_hz=sample_rate, chunk_frames=chunk_frames)
+    audio = AudioConfig(
+        sample_rate_hz=sample_rate,
+        chunk_frames=chunk_frames,
+        mock_devices=mock_audio,
+    )
     mix_path = Path(mix_track) if mix_track else None
     recording = RecordingConfig(directory=recording_dir, mix_track=mix_path)
     session_cfg = SessionConfig(
@@ -279,7 +286,9 @@ def main(
         dataFileName=str(filename),
     )
     logging.LogFile(str(filename.with_suffix(".log")), level=logging.EXP)
-    logging.console.setLevel(logging.WARNING)
+    level_name = log_level.upper()
+    level_value = getattr(logging, level_name, logging.WARNING)
+    logging.console.setLevel(level_value)
 
     # --- TimingsLog (minimal) ---
     timings_path = data_dir / f"{base}_CONV_TimingsLog_{date_str}.csv"
@@ -317,6 +326,25 @@ def main(
     show_topic = txt(text="", pos=(0, 0.35))
     show_blank = txt(text="+", pos=(0, 0.00))
     show_end = txt(text="You are now done with this task.")
+
+    # --- pre-instruction sync ---
+    show_sync.setAutoDraw(True)
+    win.flip()
+    instr_sync_time = conv_session.sync_start(SYNC_START_LAG)
+    logging.info("Pre-instruction sync ready at %s", instr_sync_time)
+    while True:
+        now = time.time()
+        if now >= instr_sync_time:
+            break
+        keys = event.getKeys([KEY_QUIT])
+        if KEY_QUIT in keys:
+            if conv_session is not None:
+                conv_session.close()
+            win.close()
+            core.quit()
+        win.flip()
+        core.wait(0.01)
+    show_sync.setAutoDraw(False)
 
     # --- instruction & trigger (condition-dependent) ---
     cond = (exp_condition or "").strip().lower()
@@ -419,21 +447,17 @@ def main(
         participant_role=role,
     )
 
-    # brief blank, synchronized start
-    show_sync.draw()
+    # blank/fixation before conversation
+    show_blank.setAutoDraw(True)
     win.flip()
-    start_time_common = conv_session.sync_start(INSTR_BLANK_S)
-    logging.info(f"Synced conversation start for {start_time_common}")
+    logging.info("Starting pre-conversation blank for %.1fs", INSTR_BLANK_S)
     fLog.write(
-        f"{dyad},{session},{SESSION_TYPE},{exp_condition},sync_start,{start_time_common},{run_clock.getTime()},,{conflict_text},{first_speaker},{role}\n"
+        f"{dyad},{session},{SESSION_TYPE},{exp_condition},blank_start,{time.time()},{run_clock.getTime()},,{conflict_text},{first_speaker},{role}\n"
     )
     fLog.flush()
-
-    show_blank.draw()
-    win.flip()
     blank_clock = core.Clock()
     blank_clock.reset()
-    while time.time() < start_time_common:
+    while blank_clock.getTime() < INSTR_BLANK_S:
         keys = event.getKeys([TTL_KEY, KEY_QUIT])
         if keys:
             if TTL_KEY in keys:
@@ -457,7 +481,10 @@ def main(
                     conv_session.close()
                 win.close()
                 core.quit()
+        win.flip()
         core.wait(0.01)
+
+    show_blank.setAutoDraw(False)
 
     # ---------------------------
     # Conversation phase
@@ -468,7 +495,9 @@ def main(
     fLog.flush()
 
     initial_role = TurnRole.SPEAKER if role == first_speaker else TurnRole.LISTENER
-    role_text = "YOUR TURN TO SPEAK" if initial_role.is_speaker else "YOUR TURN TO LISTEN"
+    role_text = (
+        "YOUR TURN TO SPEAK" if initial_role.is_speaker else "YOUR TURN TO LISTEN"
+    )
     pass_text = "Press '1' to pass the mic." if initial_role.is_speaker else ""
     show_topic.setText(f"Problem topic: {conflict_text}")
 
@@ -734,6 +763,17 @@ if __name__ == "__main__":
         default=None,
         help="Filename (relative to --record-dir) for the mixed audio track",
     )
+    ap.add_argument(
+        "--mock-audio",
+        action="store_true",
+        help="Use mock audio devices for local testing (still records streams)",
+    )
+    ap.add_argument(
+        "--log-level",
+        type=str,
+        default="WARNING",
+        help="Console log level (DEBUG, INFO, WARNING, etc.)",
+    )
     args = ap.parse_args()
     main(
         pid=args.pid,
@@ -753,4 +793,6 @@ if __name__ == "__main__":
         sample_rate=args.sample_rate,
         mixdown=args.mixdown,
         mix_track=args.mix_track,
+        mock_audio=args.mock_audio,
+        log_level=args.log_level,
     )

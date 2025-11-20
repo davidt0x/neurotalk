@@ -120,6 +120,100 @@ class SoundDeviceStreamFactory:
         pass
 
 
+class MockInputStream:
+    """Sounddevice-compatible input stream that synthesizes silence."""
+
+    def __init__(self, config: AudioConfig, callback: Callable[..., None]) -> None:
+        self._config = config
+        self._callback = callback
+        self._running = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def start_stream(self) -> None:
+        if self._thread and self._thread.is_alive():
+            return
+        self._running.set()
+        self._thread = threading.Thread(target=self._loop, daemon=True)
+        self._thread.start()
+
+    def stop_stream(self) -> None:
+        self._running.clear()
+        thread = self._thread
+        if thread is not None:
+            thread.join(timeout=1.0)
+        self._thread = None
+
+    def close(self) -> None:
+        self.stop_stream()
+
+    def is_active(self) -> bool:
+        return self._running.is_set()
+
+    def _loop(self) -> None:
+        frames = self._config.chunk_frames
+        interval = frames / float(self._config.sample_rate_hz)
+        silence = np.zeros((frames, self._config.channels), dtype=np.int16)
+        while self._running.is_set():
+            self._callback(silence, frames, None, 0)
+            time.sleep(interval)
+
+
+class MockOutputStream:
+    """Sounddevice-compatible output stream that discards audio."""
+
+    def __init__(self, config: AudioConfig, callback: Callable[..., None]) -> None:
+        self._config = config
+        self._callback = callback
+        self._running = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def start_stream(self) -> None:
+        if self._thread and self._thread.is_alive():
+            return
+        self._running.set()
+        self._thread = threading.Thread(target=self._loop, daemon=True)
+        self._thread.start()
+
+    def stop_stream(self) -> None:
+        self._running.clear()
+        thread = self._thread
+        if thread is not None:
+            thread.join(timeout=1.0)
+        self._thread = None
+
+    def close(self) -> None:
+        self.stop_stream()
+
+    def is_active(self) -> bool:
+        return self._running.is_set()
+
+    def _loop(self) -> None:
+        frames = self._config.chunk_frames
+        interval = frames / float(self._config.sample_rate_hz)
+        silent = np.zeros((frames, self._config.channels), dtype=np.int16)
+        while self._running.is_set():
+            self._callback(silent, frames, None, 0)
+            time.sleep(interval)
+
+
+class MockStreamFactory:
+    """Factory that provides mock streams for audio-free testing."""
+
+    def open_input_stream(
+        self, config: AudioConfig, callback: Callable[..., None]
+    ) -> MockInputStream:
+        return MockInputStream(config, callback)
+
+    def open_output_stream(
+        self, config: AudioConfig, callback: Callable[..., None]
+    ) -> MockOutputStream:
+        return MockOutputStream(config, callback)
+
+    def terminate(self) -> None:
+        # Mock streams manage their own lifetimes.
+        pass
+
+
 class AudioInputWorker:
     def __init__(
         self,

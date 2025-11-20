@@ -86,8 +86,12 @@ def test_wav_recorder_split_segments(tmp_path):
 
 
 def test_mix_turn_recordings(tmp_path):
-    local_target = RecorderTarget(path=tmp_path / "local.wav", channels=1, sample_rate_hz=16000)
-    remote_target = RecorderTarget(path=tmp_path / "remote.wav", channels=1, sample_rate_hz=16000)
+    local_target = RecorderTarget(
+        path=tmp_path / "local.wav", channels=1, sample_rate_hz=16000
+    )
+    remote_target = RecorderTarget(
+        path=tmp_path / "remote.wav", channels=1, sample_rate_hz=16000
+    )
     local = WavRecorder(local_target)
     remote = WavRecorder(remote_target)
 
@@ -119,16 +123,15 @@ def test_mix_turn_recordings(tmp_path):
     remote.close()
 
     out_path = tmp_path / "mixed.wav"
-    mix_turn_recordings(destination=out_path, local_recorder=local, remote_recorder=remote)
+    mix_turn_recordings(
+        destination=out_path, local_recorder=local, remote_recorder=remote
+    )
 
     with wave.open(str(out_path), "rb") as wav:
         frames = wav.readframes(wav.getnframes())
     assert frames[: len(silence)] == silence
     assert frames[len(silence) : len(silence) + len(local_voice)] == local_voice
     after_local = len(silence) + len(local_voice)
-    assert (
-        frames[after_local : after_local + len(silence)]
-        == silence
-    )
+    assert frames[after_local : after_local + len(silence)] == silence
     after_gap = after_local + len(silence)
     assert frames[after_gap : after_gap + len(remote_voice)] == remote_voice

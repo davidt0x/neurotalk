@@ -8,7 +8,9 @@ import pytest
 pytest.importorskip("psychopy", reason="couple conversation task requires PsychoPy")
 
 MODULE_PATH = (
-    Path(__file__).resolve().parents[2] / "examples" / "couple_conversation_only_task.py"
+    Path(__file__).resolve().parents[2]
+    / "examples"
+    / "couple_conversation_only_task.py"
 )
 _SPEC = importlib.util.spec_from_file_location(
     "examples.couple_conversation_only_task", MODULE_PATH

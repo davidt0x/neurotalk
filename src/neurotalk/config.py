@@ -67,6 +67,9 @@ class AudioConfig:
     format_tag:
         PyAudio format constant (e.g., `pyaudio.paInt16`). Stored as int to
         avoid importing PyAudio in pure-config contexts.
+    mock_devices:
+        When True, bypass real sound hardware and use the mock audio backend
+        which produces synthetic silence for testing.
     """
 
     sample_rate_hz: int = 16_000
@@ -74,6 +77,7 @@ class AudioConfig:
     chunk_frames: int = 512
     buffer_chunks: int = 4
     format_tag: int = 8  # matches pyaudio.paInt16
+    mock_devices: bool = False
 
     def __post_init__(self) -> None:
         chunk = self.chunk_frames
