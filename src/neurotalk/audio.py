@@ -407,20 +407,29 @@ class AudioOutputWorker:
             packet = None
 
         if packet is not None:
-            playback = self._normalize(packet.pcm, frame_count)
-            self._last_chunk = playback
-            self._counter += 1
-            if self._recorder:
-                try:
-                    self._recorder.write(packet)
-                except Exception as exc:
-                    logging.debug("Recorder write failed: %s", exc, exc_info=exc)
-                    self._last_error = exc
+            payload = self._normalize(packet.pcm, frame_count)
+            timestamp = packet.timestamp
         else:
-            playback = self._normalize(self._last_chunk, frame_count)
+            payload = self._silence_bytes(frame_count)
+            timestamp = time.time()
+
+        self._last_chunk = payload
+        self._counter += 1
+
+        if self._recorder:
+            record_packet = AudioPacket(
+                pcm=payload, counter=self._counter, timestamp=timestamp
+            )
+            try:
+                self._recorder.write(record_packet)
+            except Exception as exc:
+                logging.debug("Recorder write failed: %s", exc, exc_info=exc)
+                self._last_error = exc
 
         if not self._playback_enabled:
             playback = self._silence_bytes(frame_count)
+        else:
+            playback = payload
 
         array = np.frombuffer(playback, dtype=np.int16).reshape(
             frame_count, self.config.channels
