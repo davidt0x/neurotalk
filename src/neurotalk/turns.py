@@ -3,14 +3,38 @@
 from __future__ import annotations
 
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Callable
+from typing import Protocol
 
 from neurotalk.control import ControlMessageType, TurnPassPayload
 
-if TYPE_CHECKING:  # pragma: no cover - help type checkers without runtime import cycle
-    from neurotalk.session import ConversationSession
+
+class ConversationSessionLike(Protocol):
+    """Protocol capturing the TurnManager interactions with a session."""
+
+    def enable_transmit(self, enabled: bool) -> None: ...
+
+    def enable_receive(self, enabled: bool) -> None: ...
+
+    def start_segment(
+        self,
+        label: str,
+        *,
+        metadata: dict[str, object] | None = None,
+        target: str | tuple[str, ...] = "both",
+    ) -> None: ...
+
+    def stop_segment(self, *, target: str | tuple[str, ...] = "both") -> None: ...
+
+    def pass_turn(
+        self,
+        *,
+        run_time: float,
+        phase_time: float,
+        wall_time: float | None = None,
+    ) -> None: ...
 
 
 class TurnRole(Enum):
@@ -46,7 +70,7 @@ class TurnManager:
 
     def __init__(
         self,
-        session: "ConversationSession",
+        session: ConversationSessionLike,
         *,
         on_event: Callable[[TurnEvent], None] | None = None,
         local_label_template: str = "local_turn{index:02d}",
@@ -99,7 +123,8 @@ class TurnManager:
 
         with self._lock:
             if self._current_role is not TurnRole.SPEAKER:
-                raise RuntimeError("Cannot pass turn when not the speaker")
+                msg = "Cannot pass turn when not the speaker"
+                raise RuntimeError(msg)
             self._session.pass_turn(
                 run_time=run_time, phase_time=phase_time, wall_time=wall_time
             )

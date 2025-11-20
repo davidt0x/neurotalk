@@ -20,7 +20,6 @@ from pathlib import Path
 from psychopy import core, data, event, logging, monitors, visual
 
 from neurotalk.config import AudioConfig, NetworkConfig, RecordingConfig, SessionConfig
-from neurotalk.control import ControlMessageType
 from neurotalk.session import ConversationSession
 from neurotalk.turns import TurnEventSource, TurnManager, TurnRole
 

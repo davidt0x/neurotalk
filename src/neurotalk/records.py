@@ -11,10 +11,10 @@ from __future__ import annotations
 
 import contextlib
 import wave
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Literal, Protocol
 
 if TYPE_CHECKING:  # pragma: no cover
     from .audio import AudioPacket
@@ -213,7 +213,7 @@ def mix_turn_recordings(
         mix_wav.setframerate(framerate)
         frame_bytes = sampwidth * nchannels
 
-        def iter_segments():
+        def iter_segments() -> Iterator[tuple[int, int, Literal["local", "remote"]]]:
             for seg in local_recorder.segments:
                 if seg.start_frame is None or seg.end_frame is None:
                     continue

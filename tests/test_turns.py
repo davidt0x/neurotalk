@@ -40,20 +40,24 @@ class StubSession:
         self.pass_calls.append((run_time, phase_time, wall_time))
 
 
+def assert_flag(value: bool | None, expected: bool) -> None:
+    assert value is expected
+
+
 def test_turn_manager_pass_and_remote_handshake() -> None:
     session = StubSession()
     manager = TurnManager(session)
 
     manager.start(TurnRole.SPEAKER)
     assert session.started_segments == [("local_turn01", "local")]
-    assert session.transmit_enabled is True
-    assert session.receive_enabled is False
+    assert_flag(session.transmit_enabled, True)
+    assert_flag(session.receive_enabled, False)
 
     manager.pass_turn(run_time=1.5, phase_time=0.5, wall_time=10.0)
     assert session.pass_calls == [(1.5, 0.5, 10.0)]
     assert session.started_segments[-1] == ("remote_turn01", "remote")
-    assert session.transmit_enabled is False
-    assert session.receive_enabled is True
+    assert_flag(session.transmit_enabled, False)
+    assert_flag(session.receive_enabled, True)
 
     payload = TurnPassPayload(11.0, 2.0, 1.0)
     event = manager.handle_control_event(ControlMessageType.TURN_PASS, payload)
@@ -73,5 +77,5 @@ def test_turn_manager_stop_closes_segments() -> None:
     manager.stop()
     # stop() should close whichever segments are open and mute both directions
     assert "remote" in session.stopped_segments
-    assert session.transmit_enabled is False
-    assert session.receive_enabled is False
+    assert_flag(session.transmit_enabled, False)
+    assert_flag(session.receive_enabled, False)

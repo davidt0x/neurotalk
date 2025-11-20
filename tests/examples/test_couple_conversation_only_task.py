@@ -5,6 +5,8 @@ from pathlib import Path
 
 import pytest
 
+pytest.importorskip("psychopy", reason="couple conversation task requires PsychoPy")
+
 MODULE_PATH = (
     Path(__file__).resolve().parents[2] / "examples" / "couple_conversation_only_task.py"
 )
