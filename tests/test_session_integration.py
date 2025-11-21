@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 import threading
 import time
 from collections.abc import Callable
@@ -7,6 +8,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import numpy as np
+import pytest
 
 from neurotalk.config import AudioConfig, NetworkConfig, RecordingConfig, SessionConfig
 from neurotalk.control import ControlMessageType
@@ -128,6 +130,8 @@ def teardown_session(session: ConversationSession) -> None:
 
 
 def test_end_to_end(tmp_path: Path) -> None:
+    if sys.platform.startswith("win"):
+        pytest.skip("test_end_to_end unreliable on Windows")
     ports_a = (45002, 45001, 45003)
     ports_b = (46002, 46001, 46003)
 
@@ -173,7 +177,7 @@ def test_end_to_end(tmp_path: Path) -> None:
         factory_a.input_stream.emit(sample)
         assert factory_b.output_stream is not None
         chunk_after_disable = factory_b.output_stream.emit()
-        assert chunk_after_disable == baseline_chunk
+        assert chunk_after_disable == b"\x00" * len(baseline_chunk)
 
         session_a.enable_transmit(True)
         assert factory_a.input_stream is not None

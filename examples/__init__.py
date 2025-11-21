@@ -1,1 +1,1 @@
-"""Example experiment scripts for NeuroTalk."""
+"""Example task entrypoints and helper utilities."""

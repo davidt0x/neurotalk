@@ -1,5 +1,5 @@
 """
-Conversation Task (speaker/listener with pass key).
+Couple Conversation Task (speaker/listener with pass key).
 - Waits for TTL '=' (aka 'equal'), brief blank, then runs COMM_S with pass toggles.
 - Logs:
   * data/<base>_CONV_min_<date>.csv (main wide CSV via ExperimentHandler)
@@ -10,14 +10,21 @@ Conversation Task (speaker/listener with pass key).
 from __future__ import annotations
 
 import argparse
-import csv
 import queue
-import re
 import time
 from pathlib import Path
 
-from psychopy import core, data, event, logging, monitors, visual
+from psychopy import core, event, logging
 
+from examples.couple_tasks.log import TaskLogger
+from examples.couple_tasks.utils import (
+    create_window,
+    decode_pid,
+    load_assignment_row,
+    pick_first_speaker,
+    slug,
+    text_factory,
+)
 from neurotalk.config import AudioConfig, NetworkConfig, RecordingConfig, SessionConfig
 from neurotalk.session import ConversationSession
 from neurotalk.turns import TurnEventSource, TurnManager, TurnRole
@@ -44,153 +51,6 @@ CSV_FILENAME = "participant_counterbalancing.csv"
 SESSION_TYPE = "couple"  # fixed for this task
 
 
-# ----------------- helpers -----------------
-def decode_pid(pid_str: str):
-    if not (isinstance(pid_str, str) and pid_str.isdigit() and len(pid_str) == 3):
-        msg = "PID must be a 3-digit code like 011 or 402"
-        raise ValueError(msg)
-    pid_num = int(pid_str)
-    dyad = pid_num // 10
-    person = pid_num % 10
-    if person not in (1, 2) or dyad < 1:
-        msg = f"Bad participant id: {pid_str}"
-        raise ValueError(msg)
-    role = "A" if person == 1 else "B"
-    return dyad, role
-
-
-def slug(x: str):
-    x = (x or "").strip().lower()
-    x = re.sub(r"\s+", "_", x)
-    x = re.sub(r"[^a-z0-9_\-]", "", x)
-    return x[:60] or "topic"
-
-
-def load_assignment_row(csv_path: str, pid: str):
-    """
-    Required columns:
-      participant_id, condition,
-      Neutral_session_1, Couple_session_1, Neutral_session_2, Couple_session_2
-    """
-    csv_file = Path(csv_path)
-    if not csv_file.exists():
-        msg = f"Cannot find CSV: {csv_file}"
-        raise FileNotFoundError(msg)
-    with csv_file.open(newline="", encoding="utf-8") as f:
-        rdr = csv.DictReader(f)
-        need = {
-            "participant_id",
-            "condition",
-            "Neutral_session_1",
-            "Couple_session_1",
-            "Neutral_session_2",
-            "Couple_session_2",
-        }
-        if not need.issubset(set(rdr.fieldnames or [])):
-            missing = need - set(rdr.fieldnames or [])
-            msg = f"CSV is missing required columns: {sorted(missing)}"
-            raise ValueError(msg)
-        for row in rdr:
-            if (row.get("participant_id") or "").strip() == pid:
-                return {
-                    "participant_id": pid,
-                    "condition": (row.get("condition") or "").strip(),
-                    "Neutral_session_1": (row.get("Neutral_session_1") or "")
-                    .strip()
-                    .upper(),
-                    "Couple_session_1": (row.get("Couple_session_1") or "")
-                    .strip()
-                    .upper(),
-                    "Neutral_session_2": (row.get("Neutral_session_2") or "")
-                    .strip()
-                    .upper(),
-                    "Couple_session_2": (row.get("Couple_session_2") or "")
-                    .strip()
-                    .upper(),
-                }
-    msg = f"participant_id {pid} not found in {csv_file}"
-    raise KeyError(msg)
-
-
-def pick_first_speaker(starters: dict, session: int):
-    key = f"Couple_session_{session}"  # session type fixed to 'couple'
-    val = starters.get(key, "")
-    if val not in ("A", "B"):
-        msg = f"Starter value for {key} must be 'A' or 'B', got: {val!r}"
-        raise ValueError(msg)
-    return val
-
-
-def make_monitor(scanner):
-    if scanner == "skyra":
-        mon = monitors.Monitor("skyra")
-        mon.setSizePix((1920, 1080))
-        mon.setWidth(64)
-        mon.setDistance(89)
-        mon.save()
-    elif scanner == "prisma":
-        mon = monitors.Monitor("prisma")
-        mon.setSizePix((1920, 1080))
-        mon.setWidth(56)
-        mon.setDistance(107.5)
-        mon.save()
-    else:
-        mon = monitors.Monitor("defaultLaptop")
-    return mon
-
-
-def log_ttl(
-    fTTL,
-    exp_condition,
-    role_label,
-    segment,
-    run_clock,
-    phase_clock,
-    conflict_text,
-    first_speaker,
-    role,
-    session,
-    dyad,
-    SESSION_TYPE,
-):
-    fTTL.write(
-        f"{dyad},{session},{SESSION_TYPE},{exp_condition},{role_label},{segment},"
-        f"{time.time()},{run_clock.getTime()},{'' if phase_clock is None else phase_clock.getTime()},"
-        f"{conflict_text},{first_speaker},{role}\n"
-    )
-    fTTL.flush()
-
-
-def log_comm_press(
-    thisExp,
-    *,
-    event_name,
-    role_label,
-    run_clock,
-    phase_clock,
-    dyad,
-    session,
-    exp_condition,
-    conflict_text,
-    first_speaker,
-    participant_role,
-):
-    thisExp.addData("dyad", dyad)
-    thisExp.addData("session", session)
-    thisExp.addData("exp_condition", exp_condition)
-    thisExp.addData(
-        "event", event_name
-    )  # 'pass_press' / 'quit_press' / 'trigger_start_ttl'
-    thisExp.addData("role", role_label or "")  # 'speaker'/'listener' AFTER toggle
-    thisExp.addData("onset_run_s", run_clock.getTime())  # secs since trigger
-    if phase_clock is not None:
-        thisExp.addData("onset_phase_s", phase_clock.getTime())
-    thisExp.addData("conflict_text", conflict_text)
-    thisExp.addData("first_speaker", first_speaker)
-    thisExp.addData("participant_role", participant_role)
-    thisExp.nextEntry()
-
-
 # ----------------------------------------------------
 def main(
     *,
@@ -210,7 +70,7 @@ def main(
     chunk_frames: int,
     sample_rate: int,
     mixdown: bool = True,
-    mix_track: str | None,
+    mix_track: str | None = None,
     mock_audio: bool = False,
     log_level: str = "WARNING",
 ):
@@ -221,21 +81,17 @@ def main(
         msg = "You must provide a non-empty --conflict string"
         raise ValueError(msg)
 
-    # Decode ID and role
     dyad, role = decode_pid(pid)
 
-    # Lookup from CSV
-    row = load_assignment_row(csv_path, pid)
-    exp_condition = row["condition"]
-    starters = {
-        "Neutral_session_1": row["Neutral_session_1"],
-        "Couple_session_1": row["Couple_session_1"],
-        "Neutral_session_2": row["Neutral_session_2"],
-        "Couple_session_2": row["Couple_session_2"],
-    }
+    assignment = load_assignment_row(csv_path, pid)
+    starters = assignment.starters()
+    exp_condition = assignment.condition
 
-    first_speaker = pick_first_speaker(starters, session)  # 'A' or 'B'
+    first_speaker = pick_first_speaker(
+        starters, session=session, session_type="couple"
+    )  # 'A' or 'B'
     conflict_text = conflict.strip()
+    conflict_slug = slug(conflict_text)
 
     recording_dir = Path(record_dir)
     recording_dir.mkdir(parents=True, exist_ok=True)
@@ -270,63 +126,34 @@ def main(
     conv_session.enable_transmit(False)
     conv_session.enable_receive(False)
 
-    # --- data files ---
-    date_str = data.getDateStr()
-    data_dir = Path("data")
-    data_dir.mkdir(exist_ok=True)
-    base = f"{pid}_sess{session}_{SESSION_TYPE}_{exp_condition}_{first_speaker}_{slug(conflict_text)}"
-    filename = data_dir / f"{base}_CONV_min_{date_str}"
-
-    thisExp = data.ExperimentHandler(
-        name="CONV_min",
-        extraInfo={"session_type": SESSION_TYPE},
-        savePickle=True,
-        saveWideText=True,
-        dataFileName=str(filename),
+    logger = TaskLogger(
+        pid=pid,
+        session=session,
+        session_type=SESSION_TYPE,
+        exp_condition=exp_condition,
+        first_speaker=first_speaker,
+        conflict_text_slug=conflict_slug,
+        task_code="CONV",
+        dyad=dyad,
+        participant_role=role,
+        conflict_text=conflict_text,
     )
-    logging.LogFile(str(filename.with_suffix(".log")), level=logging.EXP)
     level_name = log_level.upper()
     level_value = getattr(logging, level_name, logging.WARNING)
     logging.console.setLevel(level_value)
 
-    # --- TimingsLog (minimal) ---
-    timings_path = data_dir / f"{base}_CONV_TimingsLog_{date_str}.csv"
-    fLog = timings_path.open("w", newline="", encoding="utf-8")
-    fLog.write(
-        "dyad,session,session_type,exp_condition,role,time.time,run.time,comm.time,conflict_text,first_speaker,participant_role\n"
-    )
-    fLog.flush()
+    win = create_window(scanner=SCANNER, size=WIN_SIZE, fullscr=FULLSCR)
+    make_text = text_factory(win, letter_height=LETTER_H, wrap_width=WRAP_W)
 
-    # TTL timestamps (verbose)
-    ttl_path = data_dir / f"{base}_CONV_TTLtimestamps_{date_str}.csv"
-    fTTL = ttl_path.open("w", newline="", encoding="utf-8")
-    fTTL.write(
-        "dyad,session,session_type,exp_condition,role,segment,time.time,run.time,comm.time,conflict_text,first_speaker,participant_role\n"
-    )
-    fTTL.flush()
+    show_instructions = make_text(text="")
+    show_sync = make_text(text="Syncing start time with your partner...")
+    show_role_txt = make_text(text="", pos=(0, 0.65))
+    show_pass = make_text(text="", pos=(0, 0.05))
+    show_timer = make_text(text="", pos=(0, -0.70))
+    show_topic = make_text(text="", pos=(0, 0.35))
+    show_blank = make_text(text="+", pos=(0, 0.00))
+    show_end = make_text(text="You are now done with this task.")
 
-    # --- window & text objects ---
-    mon = make_monitor(SCANNER)
-    win = visual.Window(
-        size=WIN_SIZE, color="black", fullscr=FULLSCR, units="norm", monitor=mon
-    )
-    win.mouseVisible = False
-
-    def txt(**kw):
-        return visual.TextStim(
-            win, height=LETTER_H, wrapWidth=WRAP_W, color="white", **kw
-        )
-
-    show_instructions = txt(text="")
-    show_sync = txt(text="Syncing start time with your partner...")
-    show_role_txt = txt(text="", pos=(0, 0.65))
-    show_pass = txt(text="", pos=(0, 0.05))
-    show_timer = txt(text="", pos=(0, -0.70))
-    show_topic = txt(text="", pos=(0, 0.35))
-    show_blank = txt(text="+", pos=(0, 0.00))
-    show_end = txt(text="You are now done with this task.")
-
-    # --- pre-instruction sync ---
     show_sync.setAutoDraw(True)
     win.flip()
     instr_sync_time = conv_session.sync_start(SYNC_START_LAG)
@@ -339,13 +166,13 @@ def main(
         if KEY_QUIT in keys:
             if conv_session is not None:
                 conv_session.close()
+            logger.close()
             win.close()
             core.quit()
         win.flip()
         core.wait(0.01)
     show_sync.setAutoDraw(False)
 
-    # --- instruction & trigger (condition-dependent) ---
     cond = (exp_condition or "").strip().lower()
     minutes = round(COMM_S / 60.0)
 
@@ -394,9 +221,9 @@ def main(
     )
 
     event.clearEvents(eventType="keyboard")
-    show_instructions.setText(instr_text)  # ← CLEAN. No scanner text injected here.
+    show_instructions.setText(instr_text)
 
-    trigger_source = None
+    trigger_source: str | None = None
     while trigger_source is None:
         show_instructions.draw()
         win.flip()
@@ -404,6 +231,7 @@ def main(
         if KEY_QUIT in keys:
             if conv_session is not None:
                 conv_session.close()
+            logger.close()
             win.close()
             core.quit()
         if any(k in TTL_ACCEPT for k in keys):
@@ -413,71 +241,49 @@ def main(
 
     run_clock = core.Clock()
 
-    # TimingsLog + TTL + main CSV: trigger
-    fLog.write(
-        f"{dyad},{session},{SESSION_TYPE},{exp_condition},trigger_start_{trigger_source},{time.time()},{run_clock.getTime()},,,{first_speaker},{role}\n"
+    logger.log_timing(
+        role_label=f"trigger_start_{trigger_source}",
+        run_clock=run_clock,
+        phase_clock=None,
     )
-    fLog.flush()
-    log_ttl(
-        fTTL,
-        exp_condition,
-        "",
-        f"trigger_start_{trigger_source}",
-        run_clock,
-        None,
-        conflict_text,
-        first_speaker,
-        role,
-        session,
-        dyad,
-        SESSION_TYPE,
+    logger.log_ttl(
+        role_label="",
+        segment=f"trigger_start_{trigger_source}",
+        run_clock=run_clock,
+        phase_clock=None,
     )
-    log_comm_press(
-        thisExp,
+    logger.log_event(
         event_name=f"trigger_start_{trigger_source}",
         role_label="",
         run_clock=run_clock,
         phase_clock=None,
-        dyad=dyad,
-        session=session,
-        exp_condition=exp_condition,
-        conflict_text=conflict_text,
-        first_speaker=first_speaker,
-        participant_role=role,
     )
 
-    # blank/fixation before conversation
     show_blank.setAutoDraw(True)
     win.flip()
     logging.info("Starting pre-conversation blank for %.1fs", INSTR_BLANK_S)
-    fLog.write(
-        f"{dyad},{session},{SESSION_TYPE},{exp_condition},blank_start,{time.time()},{run_clock.getTime()},,{conflict_text},{first_speaker},{role}\n"
+    logger.log_timing(
+        role_label="blank_start",
+        run_clock=run_clock,
+        phase_clock=None,
     )
-    fLog.flush()
     blank_clock = core.Clock()
     blank_clock.reset()
     while blank_clock.getTime() < INSTR_BLANK_S:
         keys = event.getKeys([TTL_KEY, KEY_QUIT])
         if keys:
             if TTL_KEY in keys:
-                log_ttl(
-                    fTTL,
-                    exp_condition,
-                    "",
-                    "blank",
-                    run_clock,
-                    blank_clock,
-                    conflict_text,
-                    first_speaker,
-                    role,
-                    session,
-                    dyad,
-                    SESSION_TYPE,
+                logger.log_ttl(
+                    role_label="",
+                    segment="blank",
+                    run_clock=run_clock,
+                    phase_clock=blank_clock,
                 )
                 event.clearEvents(eventType="keyboard")
             if KEY_QUIT in keys:
                 if conv_session is not None:
                     conv_session.close()
+                logger.close()
                 win.close()
                 core.quit()
         win.flip()
@@ -485,13 +291,11 @@ def main(
 
     show_blank.setAutoDraw(False)
 
-    # ---------------------------
-    # Conversation phase
-    # ---------------------------
-    fLog.write(
-        f"{dyad},{session},{SESSION_TYPE},{exp_condition},Communication_start,{time.time()},{run_clock.getTime()},,{conflict_text},{first_speaker},{role}\n"
+    logger.log_timing(
+        role_label="Communication_start",
+        run_clock=run_clock,
+        phase_clock=None,
     )
-    fLog.flush()
 
     initial_role = TurnRole.SPEAKER if role == first_speaker else TurnRole.LISTENER
     role_text = (
@@ -510,24 +314,23 @@ def main(
     comm_clock = core.Clock()
     turn_manager.start(initial_role)
 
-    # Main CSV: conversation_start
-    thisExp.addData("dyad", dyad)
-    thisExp.addData("session", session)
-    thisExp.addData("exp_condition", exp_condition)
-    thisExp.addData("event", "communication_start")
-    thisExp.addData("role", "speaker" if (role == first_speaker) else "listener")
-    thisExp.addData("onset_run_s", run_clock.getTime())
-    thisExp.addData("onset_phase_s", comm_clock.getTime())
-    thisExp.addData("conflict_text", conflict_text)
-    thisExp.addData("first_speaker", first_speaker)
-    thisExp.addData("participant_role", role)
-    thisExp.nextEntry()
+    logger.experiment.addData("dyad", dyad)
+    logger.experiment.addData("session", session)
+    logger.experiment.addData("exp_condition", exp_condition)
+    logger.experiment.addData("event", "communication_start")
+    logger.experiment.addData("role", "speaker" if (role == first_speaker) else "listener")
+    logger.experiment.addData("onset_run_s", run_clock.getTime())
+    logger.experiment.addData("onset_phase_s", comm_clock.getTime())
+    logger.experiment.addData("conflict_text", conflict_text)
+    logger.experiment.addData("first_speaker", first_speaker)
+    logger.experiment.addData("participant_role", role)
+    logger.experiment.nextEntry()
 
-    # TimingsLog: current role at start
-    fLog.write(
-        f"{dyad},{session},{SESSION_TYPE},{exp_condition},{'speaker' if (role == first_speaker) else 'listener'},{time.time()},{run_clock.getTime()},{comm_clock.getTime()},{conflict_text},{first_speaker},{role}\n"
+    logger.log_timing(
+        role_label="speaker" if (role == first_speaker) else "listener",
+        run_clock=run_clock,
+        phase_clock=comm_clock,
     )
-    fLog.flush()
 
     while comm_clock.getTime() < COMM_S:
         while True:
@@ -541,40 +344,26 @@ def main(
             show_role_txt.setText("YOUR TURN TO SPEAK")
             show_pass.setText("Press '1' to pass the mic.")
             toggled_role = "speaker"
-            fLog.write(
-                f"{dyad},{session},{SESSION_TYPE},{exp_condition},{toggled_role},{time.time()},{run_clock.getTime()},{comm_clock.getTime()},{conflict_text},{first_speaker},{role}\n"
+            logger.log_timing(
+                role_label=toggled_role,
+                run_clock=run_clock,
+                phase_clock=comm_clock,
             )
-            fLog.flush()
-            log_comm_press(
-                thisExp,
+            logger.log_event(
                 event_name="partner_pass",
                 role_label=toggled_role,
                 run_clock=run_clock,
                 phase_clock=comm_clock,
-                dyad=dyad,
-                session=session,
-                exp_condition=exp_condition,
-                conflict_text=conflict_text,
-                first_speaker=first_speaker,
-                participant_role=role,
             )
 
         current_role_label = "speaker" if turn_manager.is_speaker else "listener"
         keys_ttl = event.getKeys([TTL_KEY])
         if keys_ttl and (TTL_KEY in keys_ttl):
-            log_ttl(
-                fTTL,
-                exp_condition,
-                current_role_label,
-                "communication",
-                run_clock,
-                comm_clock,
-                conflict_text,
-                first_speaker,
-                role,
-                session,
-                dyad,
-                SESSION_TYPE,
+            logger.log_ttl(
+                role_label=current_role_label,
+                segment="communication",
+                run_clock=run_clock,
+                phase_clock=comm_clock,
             )
             event.clearEvents(eventType="keyboard")
 
@@ -588,6 +377,7 @@ def main(
             if key == KEY_QUIT:
                 if conv_session is not None:
                     conv_session.close()
+                logger.close()
                 win.close()
                 core.quit()
             elif key == KEY_PASS:
@@ -602,53 +392,44 @@ def main(
                 show_role_txt.setText("YOUR TURN TO LISTEN")
                 show_pass.setText("")
                 toggled_role = "listener"
-                fLog.write(
-                    f"{dyad},{session},{SESSION_TYPE},{exp_condition},{toggled_role},{time_here},{run_here},{comm_here},{conflict_text},{first_speaker},{role}\n"
+                logger.log_timing(
+                    role_label=toggled_role,
+                    wall_time=time_here,
+                    run_time=run_here,
+                    phase_time=comm_here,
                 )
-                fLog.flush()
-                log_comm_press(
-                    thisExp,
+                logger.log_event(
                     event_name="pass_press",
                     role_label=toggled_role,
                     run_clock=run_clock,
                     phase_clock=comm_clock,
-                    dyad=dyad,
-                    session=session,
-                    exp_condition=exp_condition,
-                    conflict_text=conflict_text,
-                    first_speaker=first_speaker,
-                    participant_role=role,
                 )
 
     turn_manager.stop()
 
-    # stop drawing
-
-    # --- MAIN CSV ROW: communication_end ---
     end_role_label = (
         "speaker" if show_role_txt.text == "YOUR TURN TO SPEAK" else "listener"
     )
-    thisExp.addData("dyad", dyad)
-    thisExp.addData("session", session)
-    thisExp.addData("exp_condition", exp_condition)
-    thisExp.addData("event", "communication_end")  # explicit phase boundary
-    thisExp.addData("role", end_role_label)  # role at end of comm
-    thisExp.addData("onset_run_s", run_clock.getTime())
-    thisExp.addData("onset_phase_s", comm_clock.getTime())
-    thisExp.addData("conflict_text", conflict_text)
-    thisExp.addData("first_speaker", first_speaker)
-    thisExp.addData("participant_role", role)
-    thisExp.nextEntry()
+    logger.experiment.addData("dyad", dyad)
+    logger.experiment.addData("session", session)
+    logger.experiment.addData("exp_condition", exp_condition)
+    logger.experiment.addData("event", "communication_end")
+    logger.experiment.addData("role", end_role_label)
+    logger.experiment.addData("onset_run_s", run_clock.getTime())
+    logger.experiment.addData("onset_phase_s", comm_clock.getTime())
+    logger.experiment.addData("conflict_text", conflict_text)
+    logger.experiment.addData("first_speaker", first_speaker)
+    logger.experiment.addData("participant_role", role)
+    logger.experiment.nextEntry()
 
-    fLog.write(
-        f"{dyad},{session},{SESSION_TYPE},{exp_condition},communication_end,{time.time()},{run_clock.getTime()},{comm_clock.getTime()},{conflict_text},{first_speaker},{role}\n"
+    logger.log_timing(
+        role_label="communication_end",
+        run_clock=run_clock,
+        phase_clock=comm_clock,
     )
-    fLog.flush()
 
     for stim in (show_role_txt, show_timer, show_pass, show_topic):
         stim.setAutoDraw(False)
-
-    # end logs
 
     show_end.draw()
     win.flip()
@@ -669,17 +450,7 @@ def main(
             except Exception as exc:
                 logging.error(f"Failed to generate mix track: {exc}")
 
-    # save & close
-    filename_str = str(filename)
-    thisExp.saveAsWideText(filename_str + ".csv")
-    thisExp.saveAsPickle(filename_str)
-    thisExp.abort()
-    logging.flush()
-    try:
-        fLog.close()
-        fTTL.close()
-    except Exception as exc:
-        logging.error(f"Failed to close log files: {exc}")
+    logger.save_and_close()
     win.close()
     core.quit()
 
