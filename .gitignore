@@ -2,6 +2,8 @@ data/
 
 examples/data/
 
+examples/story_tasks/*.log
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
