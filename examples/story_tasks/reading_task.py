@@ -3,22 +3,15 @@ pip install psychopy sounddevice pygame
 Run with: `python read_task {user_id}`
 """
 
+from __future__ import annotations
+
 import argparse
 import wave
 
 import numpy as np
 import pandas as pd
 import sounddevice as sd
-from psychopy import core, event, logging, sound, visual
-
-# Prefer the pygame backend to avoid PTB forcing the 8-channel card if we play any sounds.
-if "pygame" in sound.Sound.getBackends():
-    sound.Sound.backend = "pygame"
-else:
-    raise RuntimeError(
-        "pygame backend is unavailable. Install pygame in the PsychoPy env to avoid PTB errors."
-    )
-
+from psychopy import core, event, logging, visual
 
 FIXATION_DURATION = 10  # seconds
 SAMPLE_RATE = 16000
@@ -77,14 +70,16 @@ def main(sub_id: str, take: int | None = None) -> None:
     logging.info("Starting")
     instructions = """
 In the next task, you will read a 13-minute story aloud. The story was told live on stage to an audience.
-\nYou will see one sentence on screen at a time. Read each sentence aloud as it appears. The sentences will advance automatically, and there will be pauses after some sentences. 
-\nRead the sentences at a pace that feels comfortable for you. It is okay if you don't finish reading one sentence before the next begins. If you make a mistake, you do not need to repeat or correct yourself. 
-\nWe included notes in [square brackets] from the live stage reading of this story. You do not need to read the text in square brackets. 
-\nRemember to try to minimize head movements throughout this task. 
+\nYou will see one sentence on screen at a time. Read each sentence aloud as it appears. The sentences will advance automatically, and there will be pauses after some sentences.
+\nRead the sentences at a pace that feels comfortable for you. It is okay if you don't finish reading one sentence before the next begins. If you make a mistake, you do not need to repeat or correct yourself.
+\nWe included notes in [square brackets] from the live stage reading of this story. You do not need to read the text in square brackets.
+\nRemember to try to minimize head movements throughout this task.
 \nA fixation cross will appear when the scanner starts. The story will begin after the fixation cross.
 """
 
-    inst_stim = visual.TextStim(win, instructions, name="instructions", alignText="left")
+    inst_stim = visual.TextStim(
+        win, instructions, name="instructions", alignText="left"
+    )
     inst_stim.height = 0.06
     inst_stim.wrapWidth = 1.6
     inst_stim.draw()
@@ -94,7 +89,7 @@ In the next task, you will read a 13-minute story aloud. The story was told live
     triggered = False
     while not triggered and not handler.exit_requested:
         if keys := event.getKeys(["equal", "escape"]):
-            logging.data(f"Keys pressed {str(keys)}")
+            logging.data(f"Keys pressed {keys!s}")
             if "escape" in keys:
                 handler.request_exit()
             if "equal" in keys:
@@ -127,7 +122,9 @@ In the next task, you will read a 13-minute story aloud. The story was told live
             win.flip()
             handler.wait(duration)
     else:
-        logging.info("Exit requested before task start; skipping fixation and sentences.")
+        logging.info(
+            "Exit requested before task start; skipping fixation and sentences."
+        )
 
     with wave.open(file_name, "wb") as wf:
         wf.setnchannels(CHANNELS)

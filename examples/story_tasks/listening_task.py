@@ -10,17 +10,18 @@ Author: LT (November 1, 2019)
 Edited: ZZ October 27, 2025
 """
 
+from __future__ import annotations
+
 import argparse
 
 from psychopy import core, event, logging, sound, visual
 
-# Prefer the pygame backend 
+# Prefer the pygame backend
 if "pygame" in sound.Sound.getBackends():
     sound.Sound.backend = "pygame"
 else:
-    raise RuntimeError(
-        "pygame backend is unavailable. Install pygame in the PsychoPy env to avoid PTB errors."
-    )
+    msg = "pygame backend is unavailable. Install pygame in the PsychoPy env to avoid PTB errors."
+    raise RuntimeError(msg)
 
 # # if modified, these should be changed _before_ other imports
 # from psychopy import prefs
@@ -31,7 +32,7 @@ else:
 INSTRUCTIONS_TEXT = """
 In the next task, you will listen to a 13-minute story live on stage.
 \nAfter the scan session, you will be asked questions about the story.
-\nRemember to try to minimize head movements throughout this task. 
+\nRemember to try to minimize head movements throughout this task.
 \nA fixation cross will appear when the scanner starts, then the story will begin.
 """
 
@@ -60,7 +61,6 @@ def _wait_with_escape(seconds: float, win: visual.Window) -> None:
 
 
 def main(sub_id: str, fixation_duration: int = 10):
-
     filename = f"sub-{sub_id}_task-listening_psycophy.log"
     logging.LogFile(filename, level=logging.INFO, filemode="w")
 
@@ -97,7 +97,7 @@ def main(sub_id: str, fixation_duration: int = 10):
     triggered = False
     while not triggered:
         if keys := event.getKeys(["equal", "escape"]):
-            logging.data(f"Keys pressed {str(keys)}")
+            logging.data(f"Keys pressed {keys!s}")
             if "escape" in keys:
                 _shutdown(win)
             if "equal" in keys:

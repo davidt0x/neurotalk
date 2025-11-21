@@ -10,8 +10,11 @@ Solo Opinion Task (no passing).
 from __future__ import annotations
 
 import argparse
+import wave
 from pathlib import Path
 
+import numpy as np
+import sounddevice as sd
 from psychopy import core, event, logging
 
 if __package__:
@@ -48,6 +51,10 @@ WRAP_W = 2
 INSTR_BLANK_S = 10.0
 OPINION_S = 15.0
 OPINION_PROMPT = "Please share your opinion on the problem area you just discussed:\n\n"
+
+AUDIO_SAMPLE_RATE = 16000
+AUDIO_CHANNELS = 1
+AUDIO_DTYPE = "int16"
 
 KEY_SUBMIT = None  # set to a key string if you want manual submit (e.g., 'return')
 KEY_QUIT = "escape"
@@ -92,6 +99,16 @@ def main(pid: str, session: int, conflict: str, csv_path: str):
     win = create_window(scanner=SCANNER, size=WIN_SIZE, fullscr=FULLSCR)
     make_text = text_factory(win, letter_height=LETTER_H, wrap_width=WRAP_W)
 
+    audio_data: np.ndarray | None = None
+    audio_output_path = Path(f"{logger.filename}_audio.wav")
+
+    def quit_task() -> None:
+        if audio_data is not None:
+            sd.stop()
+        logger.close()
+        win.close()
+        core.quit()
+
     show_instructions = make_text(text="")
     show_opinion = make_text(text="", pos=(0, 0.25))
     show_timer = make_text(text="", pos=(0, -0.70))
@@ -115,9 +132,7 @@ def main(pid: str, session: int, conflict: str, csv_path: str):
         win.flip()
         keys = event.getKeys()
         if KEY_QUIT in keys:
-            logger.close()
-            win.close()
-            core.quit()
+            quit_task()
         if any(k in TTL_ACCEPT for k in keys):
             trigger_source = "ttl"
             break
@@ -152,9 +167,7 @@ def main(pid: str, session: int, conflict: str, csv_path: str):
                 )
                 event.clearEvents(eventType="keyboard")
             if KEY_QUIT in keys:
-                logger.close()
-                win.close()
-                core.quit()
+                quit_task()
         core.wait(0.01)
 
     show_opinion.setText(f"{OPINION_PROMPT} {conflict_text.upper()}")
@@ -180,6 +193,14 @@ def main(pid: str, session: int, conflict: str, csv_path: str):
         phase_clock=op_clock,
     )
 
+    frames = int(OPINION_S * AUDIO_SAMPLE_RATE)
+    audio_data = sd.rec(
+        frames,
+        samplerate=AUDIO_SAMPLE_RATE,
+        channels=AUDIO_CHANNELS,
+        dtype=AUDIO_DTYPE,
+    )
+
     submitted = False
     while op_clock.getTime() < OPINION_S and not submitted:
         remaining = round(OPINION_S - op_clock.getTime())
@@ -195,9 +216,7 @@ def main(pid: str, session: int, conflict: str, csv_path: str):
                 )
                 event.clearEvents(eventType="keyboard")
             if KEY_QUIT in keys:
-                logger.close()
-                win.close()
-                core.quit()
+                quit_task()
             if KEY_SUBMIT and (KEY_SUBMIT in keys):
                 submitted = True
                 event.clearEvents(eventType="keyboard")
@@ -228,6 +247,14 @@ def main(pid: str, session: int, conflict: str, csv_path: str):
     show_end.draw()
     win.flip()
     core.wait(1.0)
+
+    if audio_data is not None:
+        sd.wait()
+        with wave.open(str(audio_output_path), "wb") as wf:
+            wf.setnchannels(AUDIO_CHANNELS)
+            wf.setsampwidth(np.dtype(AUDIO_DTYPE).itemsize)
+            wf.setframerate(AUDIO_SAMPLE_RATE)
+            wf.writeframes(audio_data.tobytes())
 
     logger.save_and_close()
     win.close()

@@ -319,7 +319,9 @@ def main(
     )
 
     initial_role = TurnRole.SPEAKER if role == first_speaker else TurnRole.LISTENER
-    role_text = "YOUR TURN TO SPEAK" if initial_role.is_speaker else "YOUR TURN TO LISTEN"
+    role_text = (
+        "YOUR TURN TO SPEAK" if initial_role.is_speaker else "YOUR TURN TO LISTEN"
+    )
     pass_text = "Press '1' to pass the mic." if initial_role.is_speaker else ""
     show_topic.setText(f"Discussion topic: {display_topic}")
 
