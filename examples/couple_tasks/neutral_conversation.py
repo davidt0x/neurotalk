@@ -44,6 +44,7 @@ WRAP_W = 2
 
 INTRO_S = 2.0  # intro dwell before communication
 COMM_S = 30.0  # communication phase duration (s)
+SYNC_START_LAG = 12.0  # lead-in before instructions to sync timing
 
 KEY_PASS = "1"
 KEY_QUIT = "escape"
@@ -194,12 +195,33 @@ def main(
     make_text = text_factory(win, letter_height=LETTER_H, wrap_width=WRAP_W)
 
     show_instructions = make_text(text="")
+    show_sync = make_text(text="Syncing start time with your partner...")
     show_role_txt = make_text(text="", pos=(0, 0.65))
     show_pass = make_text(text="", pos=(0, 0.05))
     show_timer = make_text(text="", pos=(0, -0.70))
     show_blank = make_text(text="+", pos=(0, 0.00))
     show_topic = make_text(text="", pos=(0, 0.35))
     show_end = make_text(text="You are now done with this task.")
+
+    show_sync.setAutoDraw(True)
+    win.flip()
+    instr_sync_time = conv_session.sync_start(SYNC_START_LAG)
+    logging.info("Pre-instruction sync ready at %s", instr_sync_time)
+    while True:
+        now = time.time()
+        if now >= instr_sync_time:
+            break
+        keys = event.getKeys([KEY_QUIT])
+        if KEY_QUIT in keys:
+            if conv_session is not None:
+                conv_session.close()
+                conv_session = None
+            logger.close()
+            win.close()
+            core.quit()
+        win.flip()
+        core.wait(0.01)
+    show_sync.setAutoDraw(False)
 
     show_instructions.setText(conv_instr_text)
     show_role_txt.setText("")
