@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Minimal NeuroTalk peer using real audio devices."""
 
 from __future__ import annotations
