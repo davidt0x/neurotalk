@@ -45,7 +45,7 @@ from neurotalk.session import ConversationSession
 from neurotalk.turns import TurnEventSource, TurnManager, TurnRole
 
 # ---------- config ----------
-SCANNER = None
+SCANNER = None  # default monitor profile (override via --scanner)
 WIN_SIZE = (1280, 800)
 FULLSCR = False
 LETTER_H = 0.07
@@ -69,6 +69,7 @@ SESSION_TYPE = "couple"  # fixed for this task
 # ----------------------------------------------------
 def main(
     *,
+    scanner: str | None = SCANNER,
     pid: str,
     session: int,
     conflict: str,
@@ -157,7 +158,7 @@ def main(
     level_value = getattr(logging, level_name, logging.WARNING)
     logging.console.setLevel(level_value)
 
-    win = create_window(scanner=SCANNER, size=WIN_SIZE, fullscr=FULLSCR)
+    win = create_window(scanner=scanner, size=WIN_SIZE, fullscr=FULLSCR)
     make_text = text_factory(win, letter_height=LETTER_H, wrap_width=WRAP_W)
 
     show_instructions = make_text(text="")
@@ -551,6 +552,12 @@ if __name__ == "__main__":
         help="Filename (relative to --record-dir) for the mixed audio track",
     )
     ap.add_argument(
+        "--scanner",
+        choices=["skyra", "prisma"],
+        default=None,
+        help="Monitor profile to use for the scanner display (default: laptop)",
+    )
+    ap.add_argument(
         "--mock-audio",
         action="store_true",
         help="Use mock audio devices for local testing (still records streams)",
@@ -563,6 +570,7 @@ if __name__ == "__main__":
     )
     args = ap.parse_args()
     main(
+        scanner=args.scanner,
         pid=args.pid,
         session=args.session,
         conflict=args.conflict,
