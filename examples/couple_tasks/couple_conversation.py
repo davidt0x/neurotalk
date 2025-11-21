@@ -16,15 +16,30 @@ from pathlib import Path
 
 from psychopy import core, event, logging
 
-from examples.couple_tasks.log import TaskLogger
-from examples.couple_tasks.utils import (
-    create_window,
-    decode_pid,
-    load_assignment_row,
-    pick_first_speaker,
-    slug,
-    text_factory,
-)
+if __package__:
+    from .log import TaskLogger
+    from .utils import (
+        create_window,
+        decode_pid,
+        load_assignment_row,
+        pick_first_speaker,
+        slug,
+        text_factory,
+    )
+else:  # pragma: no cover - script-mode support
+    import sys
+    from pathlib import Path
+
+    sys.path.append(str(Path(__file__).resolve().parents[1]))
+    from couple_tasks.log import TaskLogger  # type: ignore
+    from couple_tasks.utils import (  # type: ignore
+        create_window,
+        decode_pid,
+        load_assignment_row,
+        pick_first_speaker,
+        slug,
+        text_factory,
+    )
 from neurotalk.config import AudioConfig, NetworkConfig, RecordingConfig, SessionConfig
 from neurotalk.session import ConversationSession
 from neurotalk.turns import TurnEventSource, TurnManager, TurnRole
@@ -318,7 +333,9 @@ def main(
     logger.experiment.addData("session", session)
     logger.experiment.addData("exp_condition", exp_condition)
     logger.experiment.addData("event", "communication_start")
-    logger.experiment.addData("role", "speaker" if (role == first_speaker) else "listener")
+    logger.experiment.addData(
+        "role", "speaker" if (role == first_speaker) else "listener"
+    )
     logger.experiment.addData("onset_run_s", run_clock.getTime())
     logger.experiment.addData("onset_phase_s", comm_clock.getTime())
     logger.experiment.addData("conflict_text", conflict_text)

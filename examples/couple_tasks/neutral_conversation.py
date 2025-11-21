@@ -1,18 +1,33 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 
 from psychopy import core, event, logging
 
-from examples.couple_tasks.log import TaskLogger
-from examples.couple_tasks.utils import (
-    create_window,
-    decode_pid,
-    load_assignment_row,
-    pick_first_speaker,
-    slug,
-    text_factory,
-)
+if __package__:
+    from .log import TaskLogger
+    from .utils import (
+        create_window,
+        decode_pid,
+        load_assignment_row,
+        pick_first_speaker,
+        slug,
+        text_factory,
+    )
+else:  # pragma: no cover - script-mode support
+    import sys
+
+    sys.path.append(str(Path(__file__).resolve().parents[1]))
+    from couple_tasks.log import TaskLogger  # type: ignore
+    from couple_tasks.utils import (  # type: ignore
+        create_window,
+        decode_pid,
+        load_assignment_row,
+        pick_first_speaker,
+        slug,
+        text_factory,
+    )
 
 # ---------- config ----------
 SCANNER = None
@@ -53,7 +68,9 @@ def main(pid: str, session: int, csv_path: str):
     starters = assignment.starters()
     exp_condition = assignment.condition
 
-    discussion_topic = assignment.first_topic if session == 1 else assignment.second_topic
+    discussion_topic = (
+        assignment.first_topic if session == 1 else assignment.second_topic
+    )
     discussion_topic = (discussion_topic or "").strip()
     if not discussion_topic:
         which = "first_topic" if session == 1 else "second_topic"

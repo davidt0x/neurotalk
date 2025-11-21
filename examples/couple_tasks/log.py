@@ -37,9 +37,7 @@ class TaskLogger:
         date_str = data.getDateStr()
         data_dir = Path("data")
         data_dir.mkdir(exist_ok=True)
-        base = (
-            f"{pid}_sess{session}_{session_type}_{exp_condition}_{first_speaker}_{conflict_text_slug}"
-        )
+        base = f"{pid}_sess{session}_{session_type}_{exp_condition}_{first_speaker}_{conflict_text_slug}"
         self.filename = data_dir / f"{base}_{task_code}_min_{date_str}"
         self.task_code = task_code
 

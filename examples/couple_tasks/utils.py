@@ -143,7 +143,9 @@ def load_assignment_row(csv_path: str, pid: str) -> AssignmentRow:
     raise KeyError(msg)
 
 
-def pick_first_speaker(starters: dict[str, str], *, session: int, session_type: str) -> str:
+def pick_first_speaker(
+    starters: dict[str, str], *, session: int, session_type: str
+) -> str:
     if session not in (1, 2):
         msg = "Session must be 1 or 2"
         raise ValueError(msg)
@@ -182,7 +184,9 @@ def create_window(
     units: str = "norm",
 ):
     mon = make_monitor(scanner)
-    win = visual.Window(size=size, color=color, fullscr=fullscr, units=units, monitor=mon)
+    win = visual.Window(
+        size=size, color=color, fullscr=fullscr, units=units, monitor=mon
+    )
     win.mouseVisible = False
     return win
 
