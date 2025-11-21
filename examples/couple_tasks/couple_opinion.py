@@ -28,8 +28,8 @@ else:  # pragma: no cover - script-mode support
     import sys
 
     sys.path.append(str(Path(__file__).resolve().parents[1]))
-    from couple_tasks.log import TaskLogger  # type: ignore
-    from couple_tasks.utils import (  # type: ignore
+    from couple_tasks.log import TaskLogger  # type: ignore[import-not-found]
+    from couple_tasks.utils import (  # type: ignore[import-not-found]
         create_window,
         decode_pid,
         load_assignment_row,

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import queue
+import time
 from pathlib import Path
 
 from psychopy import core, event, logging
@@ -19,8 +21,8 @@ else:  # pragma: no cover - script-mode support
     import sys
 
     sys.path.append(str(Path(__file__).resolve().parents[1]))
-    from couple_tasks.log import TaskLogger  # type: ignore
-    from couple_tasks.utils import (  # type: ignore
+    from couple_tasks.log import TaskLogger  # type: ignore[import-not-found]
+    from couple_tasks.utils import (  # type: ignore[import-not-found]
         create_window,
         decode_pid,
         load_assignment_row,
@@ -28,6 +30,10 @@ else:  # pragma: no cover - script-mode support
         slug,
         text_factory,
     )
+
+from neurotalk.config import AudioConfig, NetworkConfig, RecordingConfig, SessionConfig
+from neurotalk.session import ConversationSession
+from neurotalk.turns import TurnEventSource, TurnManager, TurnRole
 
 # ---------- config ----------
 SCANNER = None
@@ -58,7 +64,27 @@ def canonical_topic(topic: str) -> str:
     return mapping.get(cleaned.lower(), cleaned)
 
 
-def main(pid: str, session: int, csv_path: str):
+def main(
+    *,
+    pid: str,
+    session: int,
+    csv_path: str,
+    remote_ip: str,
+    record_dir: str,
+    local_in: int,
+    local_out: int,
+    local_control: int,
+    remote_in: int,
+    remote_out: int,
+    remote_control: int,
+    nat_role: int | None,
+    chunk_frames: int,
+    sample_rate: int,
+    mixdown: bool,
+    mix_track: str | None,
+    mock_audio: bool,
+    log_level: str,
+):
     if session not in (1, 2):
         msg = "Session must be 1 or 2"
         raise ValueError(msg)
@@ -118,6 +144,37 @@ def main(pid: str, session: int, csv_path: str):
         starters, session=session, session_type="neutral"
     )
 
+    recording_dir = Path(record_dir)
+    recording_dir.mkdir(parents=True, exist_ok=True)
+
+    nat_role_value = nat_role if nat_role is not None else (1 if role == "A" else 0)
+    network = NetworkConfig(
+        local_ports=(local_in, local_out, local_control),
+        remote_hint=(remote_ip, remote_in, remote_out, remote_control),
+        nat_role=nat_role_value,
+        punch_timeout_s=10.0,
+        stun_servers=(),
+    )
+    audio = AudioConfig(
+        sample_rate_hz=sample_rate,
+        chunk_frames=chunk_frames,
+        mock_devices=mock_audio,
+    )
+    mix_path = Path(mix_track) if mix_track else None
+    recording = RecordingConfig(directory=recording_dir, mix_track=mix_path)
+    session_cfg = SessionConfig(
+        participant_id=pid,
+        role=role,
+        network=network,
+        audio=audio,
+        recording=recording,
+    )
+    conv_session: ConversationSession | None = ConversationSession(session_cfg)
+    turn_manager = TurnManager(conv_session)
+    conv_session.connect()
+    conv_session.enable_transmit(False)
+    conv_session.enable_receive(False)
+
     logger = TaskLogger(
         pid=pid,
         session=session,
@@ -130,7 +187,8 @@ def main(pid: str, session: int, csv_path: str):
         participant_role=role,
         conflict_text=conflict_text,
     )
-    logging.console.setLevel(logging.WARNING)
+    level_name = log_level.upper()
+    logging.console.setLevel(getattr(logging, level_name, logging.WARNING))
 
     win = create_window(scanner=SCANNER, size=WIN_SIZE, fullscr=FULLSCR)
     make_text = text_factory(win, letter_height=LETTER_H, wrap_width=WRAP_W)
@@ -154,6 +212,9 @@ def main(pid: str, session: int, csv_path: str):
         win.flip()
         keys = event.getKeys()
         if KEY_QUIT in keys:
+            if conv_session is not None:
+                conv_session.close()
+                conv_session = None
             logger.close()
             win.close()
             core.quit()
@@ -189,6 +250,9 @@ def main(pid: str, session: int, csv_path: str):
         keys = event.getKeys([TTL_KEY, KEY_QUIT])
         if keys:
             if KEY_QUIT in keys:
+                if conv_session is not None:
+                    conv_session.close()
+                    conv_session = None
                 logger.close()
                 win.close()
                 core.quit()
@@ -210,6 +274,9 @@ def main(pid: str, session: int, csv_path: str):
             keys = event.getKeys([TTL_KEY, KEY_QUIT])
             if keys:
                 if KEY_QUIT in keys:
+                    if conv_session is not None:
+                        conv_session.close()
+                        conv_session = None
                     logger.close()
                     win.close()
                     core.quit()
@@ -229,10 +296,9 @@ def main(pid: str, session: int, csv_path: str):
         phase_clock=None,
     )
 
-    role_text = (
-        "YOUR TURN TO SPEAK" if (role == first_speaker) else "YOUR TURN TO LISTEN"
-    )
-    pass_text = "Press '1' to pass the mic." if (role == first_speaker) else ""
+    initial_role = TurnRole.SPEAKER if role == first_speaker else TurnRole.LISTENER
+    role_text = "YOUR TURN TO SPEAK" if initial_role.is_speaker else "YOUR TURN TO LISTEN"
+    pass_text = "Press '1' to pass the mic." if initial_role.is_speaker else ""
     show_topic.setText(f"Discussion topic: {display_topic}")
 
     show_role_txt.setText(role_text)
@@ -243,8 +309,9 @@ def main(pid: str, session: int, csv_path: str):
     show_topic.setAutoDraw(True)
 
     comm_clock = core.Clock()
+    turn_manager.start(initial_role)
 
-    current_role = "speaker" if (role == first_speaker) else "listener"
+    current_role = "speaker" if initial_role.is_speaker else "listener"
     logger.log_event(
         event_name="communication_start",
         role_label=current_role,
@@ -259,9 +326,30 @@ def main(pid: str, session: int, csv_path: str):
     )
 
     while comm_clock.getTime() < COMM_S:
-        current_role_label = (
-            "speaker" if show_role_txt.text == "YOUR TURN TO SPEAK" else "listener"
-        )
+        while True:
+            try:
+                msg_type, payload = conv_session.next_control_event(timeout=0.0)
+            except queue.Empty:
+                break
+            turn_event = turn_manager.handle_control_event(msg_type, payload)
+            if not turn_event or turn_event.source is not TurnEventSource.REMOTE_PASS:
+                continue
+            show_role_txt.setText("YOUR TURN TO SPEAK")
+            show_pass.setText("Press '1' to pass the mic.")
+            toggled_role = "speaker"
+            logger.log_timing(
+                role_label=toggled_role,
+                run_clock=run_clock,
+                phase_clock=comm_clock,
+            )
+            logger.log_event(
+                event_name="partner_pass",
+                role_label=toggled_role,
+                run_clock=run_clock,
+                phase_clock=comm_clock,
+            )
+
+        current_role_label = "speaker" if turn_manager.is_speaker else "listener"
 
         keys_ttl = event.getKeys([TTL_KEY])
         if keys_ttl and (TTL_KEY in keys_ttl):
@@ -281,30 +369,30 @@ def main(pid: str, session: int, csv_path: str):
         if keys:
             key, _rt = keys[-1]
             if key == KEY_QUIT:
+                if conv_session is not None:
+                    conv_session.close()
+                    conv_session = None
                 logger.close()
                 win.close()
                 core.quit()
             elif key == KEY_PASS:
-                current = show_role_txt.text
-                new_txt = (
-                    "YOUR TURN TO LISTEN"
-                    if current == "YOUR TURN TO SPEAK"
-                    else "YOUR TURN TO SPEAK"
+                if not turn_manager.is_speaker:
+                    continue
+                time_here = time.time()
+                run_here = run_clock.getTime()
+                comm_here = comm_clock.getTime()
+                turn_manager.pass_turn(
+                    run_time=run_here, phase_time=comm_here, wall_time=time_here
                 )
-                show_role_txt.setText(new_txt)
-                show_pass.setText(
-                    "Press '1' to pass the mic."
-                    if new_txt == "YOUR TURN TO SPEAK"
-                    else ""
-                )
-                toggled_role = (
-                    "speaker" if new_txt == "YOUR TURN TO SPEAK" else "listener"
-                )
+                show_role_txt.setText("YOUR TURN TO LISTEN")
+                show_pass.setText("")
+                toggled_role = "listener"
 
                 logger.log_timing(
                     role_label=toggled_role,
-                    run_clock=run_clock,
-                    phase_clock=comm_clock,
+                    wall_time=time_here,
+                    run_time=run_here,
+                    phase_time=comm_here,
                 )
 
                 logger.log_event(
@@ -313,6 +401,8 @@ def main(pid: str, session: int, csv_path: str):
                     run_clock=run_clock,
                     phase_clock=comm_clock,
                 )
+
+    turn_manager.stop()
 
     for stim in (show_role_txt, show_timer, show_pass, show_topic):
         stim.setAutoDraw(False)
@@ -341,6 +431,21 @@ def main(pid: str, session: int, csv_path: str):
     show_end.draw()
     win.flip()
     core.wait(1.0)
+
+    if conv_session is not None:
+        conv_session.close()
+        try:
+            export_dir = recording_dir / "segments"
+            conv_session.export_segments(export_dir)
+        except Exception as exc:
+            logging.error("Failed to export segments: %s", exc)
+        if mixdown:
+            try:
+                mix_track_path = conv_session.export_mix_track()
+                if mix_track_path:
+                    logging.info("Mixed audio written to %s", mix_track_path)
+            except Exception as exc:
+                logging.error("Failed to generate mix track: %s", exc)
 
     logger.save_and_close()
     win.close()
@@ -371,5 +476,84 @@ if __name__ == "__main__":
         default=CSV_FILENAME,
         help="Path to participant_counterbalancing.csv",
     )
+    ap.add_argument("--remote-ip", required=True, help="Peer IP address")
+    ap.add_argument(
+        "--record-dir",
+        default="data",
+        help="Directory for NeuroTalk recordings",
+    )
+    ap.add_argument(
+        "--local-in", type=int, default=30002, help="Local inbound audio port"
+    )
+    ap.add_argument(
+        "--local-out", type=int, default=30001, help="Local outbound audio port"
+    )
+    ap.add_argument(
+        "--local-control", type=int, default=30003, help="Local control port"
+    )
+    ap.add_argument(
+        "--remote-in", type=int, default=30002, help="Remote inbound audio port"
+    )
+    ap.add_argument(
+        "--remote-out", type=int, default=30001, help="Remote outbound audio port"
+    )
+    ap.add_argument(
+        "--remote-control", type=int, default=30003, help="Remote control port"
+    )
+    ap.add_argument(
+        "--nat-role",
+        type=int,
+        choices=[0, 1],
+        default=None,
+        help="NAT traversal role override (0=passive,1=active)",
+    )
+    ap.add_argument(
+        "--chunk-frames", type=int, default=512, help="Audio chunk size (frames)"
+    )
+    ap.add_argument(
+        "--sample-rate", type=int, default=16000, help="Audio sample rate (Hz)"
+    )
+    ap.add_argument(
+        "--mixdown",
+        default=True,
+        action=argparse.BooleanOptionalAction,
+        help="Produce a mixed speaker/listener WAV file (use --no-mixdown to skip)",
+    )
+    ap.add_argument(
+        "--mix-track",
+        type=str,
+        default=None,
+        help="Filename (relative to --record-dir) for the mixed audio track",
+    )
+    ap.add_argument(
+        "--mock-audio",
+        action="store_true",
+        help="Use mock audio devices for local testing (still records streams)",
+    )
+    ap.add_argument(
+        "--log-level",
+        type=str,
+        default="WARNING",
+        help="Console log level (DEBUG, INFO, WARNING, etc.)",
+    )
     args = ap.parse_args()
-    main(pid=args.pid, session=args.session, csv_path=args.csv)
+    main(
+        pid=args.pid,
+        session=args.session,
+        csv_path=args.csv,
+        remote_ip=args.remote_ip,
+        record_dir=args.record_dir,
+        local_in=args.local_in,
+        local_out=args.local_out,
+        local_control=args.local_control,
+        remote_in=args.remote_in,
+        remote_out=args.remote_out,
+        remote_control=args.remote_control,
+        nat_role=args.nat_role,
+        chunk_frames=args.chunk_frames,
+        sample_rate=args.sample_rate,
+        mixdown=args.mixdown,
+        mix_track=args.mix_track,
+        mock_audio=args.mock_audio,
+        log_level=args.log_level,
+    )
