@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Solo Opinion Task (no passing).
 - Waits for TTL '=', brief blank, shows opinion prompt for OPINION_S seconds (or until submit key if set).

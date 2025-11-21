@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Conversation Task (speaker/listener with pass key).
 - Waits for TTL '=' (aka 'equal'), brief blank, then runs COMM_S with pass toggles.
