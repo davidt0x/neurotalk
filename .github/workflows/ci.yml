@@ -64,6 +64,12 @@ jobs:
 
       - uses: astral-sh/setup-uv@v7
 
+      - name: Install audio dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libportaudio2 libportaudio-dev libasound-dev
+
       - name: Install package
         run: uv sync
 
