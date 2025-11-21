@@ -12,11 +12,11 @@
 <!-- SPHINX-START -->
 
 NeuroTalk is a Python toolkit for running hyperscanning experiments that need
-reliable, low-latency audio plus an out-of-band control link. It grew out of
-the CONV/DIAD paradigms used at Princeton's Hyperscanning Lab; you can still
-inspect those legacy scripts under `examples/legacy/`. The library is being
-rewritten from the ground up so researchers can script their own protocols
-without copying monolithic experiments.
+reliable, low-latency audio plus an out-of-band control link. It grew out of the
+CONV/DIAD paradigms used at Princeton's Hyperscanning Lab; you can still inspect
+those legacy scripts under `examples/legacy/`. The library is being rewritten
+from the ground up so researchers can script their own protocols without copying
+monolithic experiments.
 
 ## Features
 
@@ -58,7 +58,7 @@ from neurotalk.session import ConversationSession
 config = SessionConfig(participant_id="011", role="A")
 
 with ConversationSession(config) as session:
-    session.connect()                     # Opens sockets, performs hole punch
+    session.connect()  # Opens sockets, performs hole punch
     session.sync_start(delay_seconds=12)  # Agree on a shared start timestamp
     session.enable_transmit(True)
     session.start_segment("practice", target="local")
