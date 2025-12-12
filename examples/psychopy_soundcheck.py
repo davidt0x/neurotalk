@@ -1,22 +1,50 @@
 #!/usr/bin/env python
 
-# Run this from the command line from storyteller/scripts/ directory using, e.g.:
-#   ./soundcheck_presentation.py stimuli/bronx_clean.wav .5
-
+import argparse
 import sys
-import time
-from os.path import exists, join
+from pathlib import Path
+from importlib import resources
 from psychopy import prefs
 from psychtoolbox import audio
 from psychopy import core, event, logging, sound, visual
 
-# Command line arguments for audio file and initial volume
-audio_fn = sys.argv[1]
-volume = float(sys.argv[2])
-# Allow louder-than-1.0 gains; map common 0-10 inputs into a 0-2 range.
-MAX_VOLUME = 1.0
-volume = min(volume, MAX_VOLUME) 
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="PsychoPy/PTB soundcheck utility.")
+    parser.add_argument(
+        "--audio",
+        dest="audio_fn",
+        help="Optional path to audio file to play. If omitted, a bundled soundcheck tone is used.",
+    )
+    parser.add_argument(
+        "--volume",
+        type=float,
+        default=0.3,
+        help="Starting volume (0-1 or higher for a boost; values >2 are clamped). Default: 0.3",
+    )
+    parser.add_argument(
+        "--device",
+        help="Preferred device name (substring match, PTB list). Default: auto-select output device.",
+    )
+    parser.add_argument(
+        "--host",
+        help="Preferred host API name (substring match, e.g., 'MME', 'Windows WASAPI'). Default: any.",
+    )
+    parser.add_argument(
+        "--list-devices",
+        action="store_true",
+        help="List PTB/PortAudio devices and exit.",
+    )
+    return parser.parse_args()
+
+
+args = parse_args()
+audio_fn = args.audio_fn
+volume = args.volume
+# Allow louder-than-1.0 gains; cap at 2.0 to limit clipping.
+MAX_VOLUME = 2.0
 volume = max(0.0, min(MAX_VOLUME, volume))
+LOOP_REPETITIONS = 1_000_000  # effectively "infinite" for our purposes
 
 # Set up function to check keyboard inputs
 def proceed_keys(keys, wait):
@@ -49,41 +77,44 @@ def scanner_keys(keys, wait=False):
         logging.data('Response 4')
     return wait
 
-# Also show PTB/PortAudio devices with channel counts (these indices are used by
-# the psychtoolbox backend).
-ptb_devices = audio.get_devices()
-print("\nPTB/PortAudio devices:")
-for dev in ptb_devices:
-    print(
-        f"Device {dev['DeviceIndex']}: name='{dev['DeviceName']}', "
-        f"host='{dev['HostAudioAPIName']}', outputs={dev['NrOutputChannels']}, "
-        f"inputs={dev['NrInputChannels']}"
-    )
+def choose_device(ptb_devices, name_hint, host_hint):
+    """Select a 2-channel output device matching hints, fall back to first output-capable."""
 
-# Pick the first two-channel output device matching the preferred name/host (or
-# the first two-channel device as a fallback) so we avoid multi-channel
-# defaults that trigger FillBuffer errors.
-preferred_device_name = "Headphones (Realtek(R) Audio)"
-preferred_host = "MME"
-target_device = None
-for dev in ptb_devices:
-    if (
-        dev["NrOutputChannels"] == 2
-        and preferred_device_name in dev["DeviceName"]
-        and dev["HostAudioAPIName"] == preferred_host
-    ):
-        target_device = dev
-        break
-if target_device is None:
+    def match(dev):
+        return (
+            dev["NrOutputChannels"] == 2
+            and (name_hint is None or name_hint.lower() in dev["DeviceName"].lower())
+            and (host_hint is None or host_hint.lower() in dev["HostAudioAPIName"].lower())
+        )
+
     for dev in ptb_devices:
-        if dev["NrOutputChannels"] == 2 and dev["HostAudioAPIName"] == preferred_host:
-            target_device = dev
-            break
-if target_device is None:
+        if match(dev):
+            return dev
     for dev in ptb_devices:
         if dev["NrOutputChannels"] == 2:
-            target_device = dev
-            break
+            if host_hint is None or host_hint.lower() in dev["HostAudioAPIName"].lower():
+                return dev
+    for dev in ptb_devices:
+        if dev["NrOutputChannels"] > 0:
+            return dev
+    return None
+
+
+# Get the list of devices from PTB
+ptb_devices = audio.get_devices()
+
+if args.list_devices:
+
+    print("\nPTB/PortAudio devices:")
+    for dev in ptb_devices:
+        print(
+            f"Device {dev['DeviceIndex']}: name='{dev['DeviceName']}', "
+            f"host='{dev['HostAudioAPIName']}', outputs={dev['NrOutputChannels']}, "
+            f"inputs={dev['NrInputChannels']}"
+        )
+    sys.exit(0)
+
+target_device = choose_device(ptb_devices, args.device, args.host)
 
 if target_device:
     prefs.hardware["audioDevice"] = target_device["DeviceName"]
@@ -95,18 +126,30 @@ if target_device:
         f"host={target_device['HostAudioAPIName']})"
     )
 else:
-    print("\nWARNING: No 2-channel output device found; default device will be used.")
+    print("\nWARNING: No output device found; default device will be used.")
 
 # Reduce verbosity of PsychoPy logging
 logging.console.setLevel(logging.DATA)
 
+
+def _default_audio_path() -> str:
+    """Locate the bundled soundcheck WAV inside the neurotalk package."""
+    try:
+        return str(resources.files("neurotalk.data") / "soundcheck.ogg")
+    except Exception:
+        root = Path(__file__).resolve().parents[1]
+        local = root / "src" / "neurotalk" / "data" / "soundcheck.ogg"
+        return str(local)
+
+
 # Load audio story stimulus at mid-volume
 speaker_index = target_device["DeviceIndex"] if target_device else None
+audio_source = audio_fn or _default_audio_path()
 stimulus = sound.Sound(
-    audio_fn,
-    stereo=False,
+    audio_source,
+    stereo=True,  # bundled WAV is stereo; allow 2-ch devices
     volume=volume,
-    name=audio_fn,
+    name=str(audio_source),
     speaker=speaker_index,
 )
 
@@ -168,7 +211,7 @@ volume_text = visual.TextStim(
     text=f"Volume: {volume:.2f} (max {MAX_VOLUME:.1f})",
 )
 
-stimulus.play()
+stimulus.play(loops=LOOP_REPETITIONS)
 adjusting = True
 while adjusting:
     instructions.draw()

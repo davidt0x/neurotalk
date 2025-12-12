@@ -4,6 +4,10 @@ examples/data/
 
 examples/story_tasks/*.log
 
+# Keep bundled assets under the package
+!src/neurotalk/data/
+!src/neurotalk/data/**
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

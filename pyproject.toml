@@ -46,6 +46,19 @@ Homepage = "https://github.com/davidt0x/neurotalk"
 Discussions = "https://github.com/davidt0x/neurotalk/discussions"
 Changelog = "https://github.com/davidt0x/neurotalk/releases"
 
+[project.scripts]
+neurotalk-device-list = "neurotalk.cli:main"
+
+[tool.hatch.build.targets.wheel]
+include = [
+  "src/neurotalk/data/soundcheck.ogg",
+]
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "src/neurotalk/data/soundcheck.ogg",
+]
+
 
 [dependency-groups]
 test = [
