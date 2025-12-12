@@ -37,7 +37,6 @@ dependencies = [
 [project.optional-dependencies]
 examples = [
   "psychopy",
-  "pygame",
 ]
 
 [project.urls]
