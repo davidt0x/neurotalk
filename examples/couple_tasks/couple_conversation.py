@@ -40,7 +40,8 @@ else:  # pragma: no cover - script-mode support
         slug,
         text_factory,
     )
-from neurotalk.config import AudioConfig, NetworkConfig, RecordingConfig, SessionConfig
+from neurotalk.config import SessionConfig
+from neurotalk.config_cli import add_config_arguments, load_config_from_args
 from neurotalk.session import ConversationSession
 from neurotalk.turns import TurnEventSource, TurnManager, TurnRole
 
@@ -69,26 +70,13 @@ SESSION_TYPE = "couple"  # fixed for this task
 # ----------------------------------------------------
 def main(
     *,
-    pid: str,
+    session_cfg: SessionConfig,
     session: int,
     conflict: str,
-    csv_path: str,
-    remote_ip: str,
-    record_dir: str,
-    local_in: int,
-    local_out: int,
-    local_control: int,
-    remote_in: int,
-    remote_out: int,
-    remote_control: int,
-    nat_role: int | None,
-    chunk_frames: int,
-    sample_rate: int,
+    csv_path: Path,
     mixdown: bool = True,
-    mix_track: str | None = None,
-    mock_audio: bool = False,
     log_level: str = "WARNING",
-):
+) -> None:
     if session not in (1, 2):
         msg = "Session must be 1 or 2"
         raise ValueError(msg)
@@ -96,7 +84,11 @@ def main(
         msg = "You must provide a non-empty --conflict string"
         raise ValueError(msg)
 
+    cfg = SessionConfig.from_dict(session_cfg.to_dict())
+    pid = cfg.participant_id
     dyad, role = decode_pid(pid)
+    cfg.participant_id = pid
+    cfg.role = role
 
     assignment = load_assignment_row(csv_path, pid)
     starters = assignment.starters()
@@ -108,34 +100,12 @@ def main(
     conflict_text = conflict.strip()
     conflict_slug = slug(conflict_text)
 
-    recording_dir = Path(record_dir)
+    recording_dir = cfg.recording.directory
     recording_dir.mkdir(parents=True, exist_ok=True)
 
-    nat_role_value = nat_role if nat_role is not None else (1 if role == "A" else 0)
-    network = NetworkConfig(
-        local_ports=(local_in, local_out, local_control),
-        remote_hint=(remote_ip, remote_in, remote_out, remote_control),
-        nat_role=nat_role_value,
-        punch_timeout_s=10.0,
-        stun_servers=(),
-    )
-    audio = AudioConfig(
-        sample_rate_hz=sample_rate,
-        chunk_frames=chunk_frames,
-        mock_devices=mock_audio,
-    )
-    mix_path = Path(mix_track) if mix_track else None
-    recording = RecordingConfig(directory=recording_dir, mix_track=mix_path)
-    session_cfg = SessionConfig(
-        participant_id=pid,
-        role=role,
-        network=network,
-        audio=audio,
-        recording=recording,
-    )
     conv_session: ConversationSession | None = None
 
-    conv_session = ConversationSession(session_cfg)
+    conv_session = ConversationSession(cfg)
     turn_manager = TurnManager(conv_session)
     conv_session.connect()
     conv_session.enable_transmit(False)
@@ -472,16 +442,9 @@ def main(
     core.quit()
 
 
-if __name__ == "__main__":
-    ap = argparse.ArgumentParser()
-    ap.add_argument(
-        "--pid",
-        "-p",
-        type=str,
-        required=True,
-        help="3-digit participant ID (e.g., 011, 402)",
-    )
-    ap.add_argument(
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Couple Conversation Task")
+    parser.add_argument(
         "--session",
         "-s",
         type=int,
@@ -489,97 +452,45 @@ if __name__ == "__main__":
         required=True,
         help="Session number (1 or 2)",
     )
-    ap.add_argument(
+    parser.add_argument(
         "--conflict",
         "-t",
         type=str,
         required=True,
         help="Human-readable conflict topic to display/log",
     )
-    ap.add_argument(
+    parser.add_argument(
         "--csv",
         "-c",
-        type=str,
-        default=CSV_FILENAME,
+        type=Path,
+        default=Path(CSV_FILENAME),
         help="Path to participant_counterbalancing.csv",
     )
-    ap.add_argument("--remote-ip", required=True, help="Peer IP address")
-    ap.add_argument(
-        "--record-dir", default="data", help="Directory for NeuroTalk recordings"
-    )
-    ap.add_argument(
-        "--local-in", type=int, default=30002, help="Local inbound audio port"
-    )
-    ap.add_argument(
-        "--local-out", type=int, default=30001, help="Local outbound audio port"
-    )
-    ap.add_argument(
-        "--local-control", type=int, default=30003, help="Local control port"
-    )
-    ap.add_argument(
-        "--remote-in", type=int, default=30002, help="Remote inbound audio port"
-    )
-    ap.add_argument(
-        "--remote-out", type=int, default=30001, help="Remote outbound audio port"
-    )
-    ap.add_argument(
-        "--remote-control", type=int, default=30003, help="Remote control port"
-    )
-    ap.add_argument(
-        "--nat-role",
-        type=int,
-        choices=[0, 1],
-        default=None,
-        help="NAT traversal role override (0=passive,1=active)",
-    )
-    ap.add_argument(
-        "--chunk-frames", type=int, default=512, help="Audio chunk size (frames)"
-    )
-    ap.add_argument(
-        "--sample-rate", type=int, default=16000, help="Audio sample rate (Hz)"
-    )
-    ap.add_argument(
+    parser.add_argument(
         "--mixdown",
         default=True,
         action=argparse.BooleanOptionalAction,
         help="Produce a mixed speaker/listener WAV file (use --no-mixdown to skip)",
     )
-    ap.add_argument(
-        "--mix-track",
-        type=str,
-        default=None,
-        help="Filename (relative to --record-dir) for the mixed audio track",
-    )
-    ap.add_argument(
-        "--mock-audio",
-        action="store_true",
-        help="Use mock audio devices for local testing (still records streams)",
-    )
-    ap.add_argument(
+    parser.add_argument(
         "--log-level",
         type=str,
         default="WARNING",
         help="Console log level (DEBUG, INFO, WARNING, etc.)",
     )
-    args = ap.parse_args()
+    add_config_arguments(parser)
+    return parser
+
+
+if __name__ == "__main__":
+    parser = _build_parser()
+    args = parser.parse_args()
+    session_cfg = load_config_from_args(args)
     main(
-        pid=args.pid,
+        session_cfg=session_cfg,
         session=args.session,
         conflict=args.conflict,
         csv_path=args.csv,
-        remote_ip=args.remote_ip,
-        record_dir=args.record_dir,
-        local_in=args.local_in,
-        local_out=args.local_out,
-        local_control=args.local_control,
-        remote_in=args.remote_in,
-        remote_out=args.remote_out,
-        remote_control=args.remote_control,
-        nat_role=args.nat_role,
-        chunk_frames=args.chunk_frames,
-        sample_rate=args.sample_rate,
         mixdown=args.mixdown,
-        mix_track=args.mix_track,
-        mock_audio=args.mock_audio,
         log_level=args.log_level,
     )

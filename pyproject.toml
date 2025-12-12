@@ -34,6 +34,8 @@ dependencies = [
   'sounddevice',
   # Cap numpy below 2.3 so SciPy wheels resolve (needed for psychopy extra).
   'numpy >=1.20,<2.3',
+  'pyyaml >=6',
+  'rich >=13',
 ]
 [project.optional-dependencies]
 examples = [
@@ -50,12 +52,14 @@ Changelog = "https://github.com/davidt0x/neurotalk/releases"
 neurotalk-device-list = "neurotalk.cli:main"
 
 [tool.hatch.build.targets.wheel]
+packages = ["src/neurotalk"]
 include = [
   "src/neurotalk/data/soundcheck.ogg",
 ]
 
 [tool.hatch.build.targets.sdist]
 include = [
+  "src/neurotalk",
   "src/neurotalk/data/soundcheck.ogg",
 ]
 
