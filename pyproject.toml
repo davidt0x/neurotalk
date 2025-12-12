@@ -32,7 +32,8 @@ classifiers = [
 dynamic = ["version"]
 dependencies = [
   'sounddevice',
-  'numpy >=1.20',
+  # Cap numpy below 2.3 so SciPy wheels resolve (needed for psychopy extra).
+  'numpy >=1.20,<2.3',
 ]
 [project.optional-dependencies]
 examples = [
