@@ -46,7 +46,7 @@ class EscapeHandler:
             core.wait(min(POLL_INTERVAL, max(0.0, timer.getTime())))
 
 
-def main(sub_id: str, take: int | None = None) -> None:
+def main(sub_id: str, windowed: bool, take: int | None = None) -> None:
     file_name = f"sub-{sub_id}_task-reading_audio.wav"
     audio_data = np.zeros((0, CHANNELS), dtype=DTYPE)
     handler = EscapeHandler()
@@ -56,7 +56,7 @@ def main(sub_id: str, take: int | None = None) -> None:
         df = df.iloc[:take]
         logging.warn(f"Taking first {take} sentences only.")
 
-    win = visual.Window(color="black", monitor="testMonitor")
+    win = visual.Window(color="black", monitor="testMonitor", fullscr=not windowed)
     win.mouseVisible = False
     message = visual.TextStim(win, "", autoDraw=True, name="message")
 
@@ -88,11 +88,11 @@ In the next task, you will read a 13-minute story aloud. The story was told live
 
     triggered = False
     while not triggered and not handler.exit_requested:
-        if keys := event.getKeys(["equal", "escape"]):
+        if keys := event.getKeys(["equal", "escape", "5"]):
             logging.data(f"Keys pressed {keys!s}")
             if "escape" in keys:
                 handler.request_exit()
-            if "equal" in keys:
+            if "equal" in keys or "5" in keys:
                 triggered = True
 
     logging.info("Got first scanner trigger! Resetting clocks")
@@ -140,5 +140,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("sub_id")
     parser.add_argument("-t", "--take", type=int, default=None)
+    parser.add_argument("-w", "--windowed", action="store_true", default=False)
     args = parser.parse_args()
-    main(args.sub_id, args.take)
+
+    main(args.sub_id, args.windowed, args.take)

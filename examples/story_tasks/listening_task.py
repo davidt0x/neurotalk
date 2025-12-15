@@ -1,11 +1,6 @@
 """
 This script plays the audio file stimulus 'I Knew You Were Black'.
 
-For macOS on Apple Sillicon, I had to:
-1. `pip install pygame`
-2. update the hardcoded backend variable to pygame in:
-`/opt/homebrew/Caskroom/miniconda/base/envs/psychopy/lib/python3.10/site-packages/psychopy/sound/sound.py`
-
 Author: LT (November 1, 2019)
 Edited: ZZ October 27, 2025
 """
@@ -60,14 +55,14 @@ def _wait_with_escape(seconds: float, win: visual.Window) -> None:
         core.wait(min(POLL_INTERVAL, max(0.0, timer.getTime())))
 
 
-def main(sub_id: str, fixation_duration: int = 10):
+def main(sub_id: str, windowed: bool, fixation_duration: int = 10):
     filename = f"sub-{sub_id}_task-listening_psycophy.log"
     logging.LogFile(filename, level=logging.INFO, filemode="w")
 
     run_clock = core.Clock()
     logging.setDefaultClock(run_clock)
 
-    win = visual.Window(color="black")
+    win = visual.Window(color="black", fullscr=not windowed)
     win.mouseVisible = False
 
     # config
@@ -96,11 +91,11 @@ def main(sub_id: str, fixation_duration: int = 10):
     # -- wait for trigger --
     triggered = False
     while not triggered:
-        if keys := event.getKeys(["equal", "escape"]):
+        if keys := event.getKeys(["equal", "escape", "5"]):
             logging.data(f"Keys pressed {keys!s}")
             if "escape" in keys:
                 _shutdown(win)
-            if "equal" in keys:
+            if "equal" in keys or "5" in keys:
                 triggered = True
 
     logging.info("Got first scanner trigger! Resetting clocks")
@@ -125,7 +120,8 @@ def main(sub_id: str, fixation_duration: int = 10):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("sub_id", help="Specify participant #")
+    parser.add_argument("-w", "--windowed", action="store_true", default=False)
     args = parser.parse_args()
 
-    main(args.sub_id)
+    main(args.sub_id, args.windowed)
     core.quit()

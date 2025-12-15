@@ -3,6 +3,7 @@ data/
 examples/data/
 
 examples/story_tasks/*.log
+examples/story_tasks/*.wav
 
 # Keep bundled assets under the package
 !src/neurotalk/data/
