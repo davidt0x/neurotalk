@@ -44,12 +44,12 @@ else:  # pragma: no cover - script-mode support
 # ---------- config ----------
 SCANNER = None
 WIN_SIZE = (1280, 800)
-FULLSCR = False
+FULLSCR = True
 LETTER_H = 0.07
 WRAP_W = 2
 
 INSTR_BLANK_S = 10.0
-OPINION_S = 15.0
+OPINION_S = 120.0
 OPINION_PROMPT = "Please share your opinion on the problem area you just discussed:\n\n"
 
 AUDIO_SAMPLE_RATE = 16000
@@ -58,8 +58,8 @@ AUDIO_DTYPE = "int16"
 
 KEY_SUBMIT = None  # set to a key string if you want manual submit (e.g., 'return')
 KEY_QUIT = "escape"
-TTL_KEY = "equal"
-TTL_ACCEPT = {"equal", "="}
+TTL_KEY = "5"
+TTL_ACCEPT = {"equal", "=",TTL_KEY}
 
 CSV_FILENAME = "participant_counterbalancing.csv"
 SESSION_TYPE = "couple"
@@ -117,8 +117,8 @@ def main(pid: str, session: int, conflict: str, csv_path: str):
 
     instr = (
         f"In the last task, you discussed {conflict_text.upper()} with your partner.\n\n\n"
-        f"Next, we would like you to report your own personal opinion on {conflict_text.upper()}. For N minutes,\n"
-        "please speak aloud whatever you can about your thoughts and feelings on the topic.\n\n\n"
+        f"Next, we would like to know more about this problem. For 2 minutes,\n"
+        "please say in your own words why this topic is a problem in your relationship.\n\n\n"
         "This recording is confidential. The experimenter has muted the audio, and what you say now will\n"
         "NOT be shared with your partner.\n\n\n"
         "You’ll first see a fixation cross for 10 seconds.\n"
