@@ -8,9 +8,13 @@ legacy CONV/DIAD scripts but callers are free to override anything.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
+
+import yaml
+from dataclasses import asdict
 
 PortRange = tuple[int, int]
 
@@ -48,6 +52,21 @@ class NetworkConfig:
             msg = "nat_role must be 0 (passive) or 1 (active)"
             raise ValueError(msg)
 
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any] | None) -> "NetworkConfig":
+        if data is None:
+            return cls()
+        d = dict(data)
+        if "local_ports" in d:
+            d["local_ports"] = tuple(d["local_ports"])
+        if "remote_hint" in d:
+            d["remote_hint"] = tuple(d["remote_hint"])
+        if "stun_servers" in d:
+            d["stun_servers"] = tuple(d["stun_servers"])
+        return cls(**d)
+
+    def to_dict(self) -> dict[str, Any]:
+        return _normalize(asdict(self))
 
 @dataclass(slots=True)
 class AudioConfig:
@@ -91,6 +110,15 @@ class AudioConfig:
             msg = "buffer_chunks must be between 1 and 25"
             raise ValueError(msg)
 
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any] | None) -> "AudioConfig":
+        if data is None:
+            return cls()
+        d = dict(data)
+        return cls(**d)
+
+    def to_dict(self) -> dict[str, Any]:
+        return _normalize(asdict(self))
 
 @dataclass(slots=True)
 class RecordingConfig:
@@ -114,6 +142,20 @@ class RecordingConfig:
     remote_track: Path | None = None
     mix_track: Path | None = None
 
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any] | None) -> "RecordingConfig":
+        if data is None:
+            return cls()
+        d = dict(data)
+        if "directory" in d:
+            d["directory"] = Path(d["directory"])
+        for key in ("local_track", "remote_track", "mix_track"):
+            if key in d and d[key] is not None:
+                d[key] = Path(d[key])
+        return cls(**d)
+
+    def to_dict(self) -> dict[str, Any]:
+        return _normalize(asdict(self))
 
 @dataclass(slots=True)
 class SessionConfig:
@@ -138,8 +180,8 @@ class SessionConfig:
         Free-form dict for experimenters to stash extra context.
     """
 
-    participant_id: str
-    role: str
+    participant_id: str = "participant"
+    role: str = "role"
     network: NetworkConfig = field(default_factory=NetworkConfig)
     audio: AudioConfig = field(default_factory=AudioConfig)
     recording: RecordingConfig = field(default_factory=RecordingConfig)
@@ -148,8 +190,69 @@ class SessionConfig:
 
     def __post_init__(self) -> None:
         if not self.participant_id:
-            msg = "participant_id must be non-empty"
-            raise ValueError(msg)
+            self.participant_id = "participant"
         if not self.role:
-            msg = "role must be non-empty"
+            self.role = "role"
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any] | None) -> "SessionConfig":
+        data = data or {}
+        if not isinstance(data, Mapping):
+            msg = "Config root must be a mapping"
             raise ValueError(msg)
+        return cls(
+            participant_id=str(data.get("participant_id", "")),
+            role=str(data.get("role", "")),
+            network=NetworkConfig.from_dict(data.get("network")),
+            audio=AudioConfig.from_dict(data.get("audio")),
+            recording=RecordingConfig.from_dict(data.get("recording")),
+            debug=bool(data.get("debug", False)),
+            metadata=dict(data.get("metadata", {})),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "participant_id": self.participant_id,
+            "role": self.role,
+            "network": self.network.to_dict(),
+            "audio": self.audio.to_dict(),
+            "recording": self.recording.to_dict(),
+            "debug": self.debug,
+            "metadata": self.metadata,
+        }
+
+    @classmethod
+    def from_yaml(cls, path: str | Path | None = None) -> "SessionConfig":
+        cfg_path = Path(path) if path is not None else Path("neurotalk.yaml")
+        if not cfg_path.exists():
+            msg = f"Config file not found: {cfg_path}"
+            raise FileNotFoundError(msg)
+        with cfg_path.open("r", encoding="utf-8") as handle:
+            data = yaml.safe_load(handle) or {}
+        return cls.from_dict(data)
+
+    def to_yaml(self, path: str | Path) -> None:
+        cfg_path = Path(path)
+        cfg_path.write_text(yaml.safe_dump(self.to_dict()), encoding="utf-8")
+
+
+def load_neurotalk_config(path: str | Path | None = None) -> SessionConfig:
+    """
+    Load a SessionConfig from YAML (default: neurotalk.yaml in CWD).
+    """
+
+    return SessionConfig.from_yaml(path)
+
+
+def _normalize(obj: Any) -> Any:
+    """Convert dataclass asdict output into YAML-friendly primitives."""
+
+    if isinstance(obj, Path):
+        return str(obj)
+    if isinstance(obj, tuple):
+        return [_normalize(x) for x in obj]
+    if isinstance(obj, list):
+        return [_normalize(x) for x in obj]
+    if isinstance(obj, dict):
+        return {k: _normalize(v) for k, v in obj.items()}
+    return obj
