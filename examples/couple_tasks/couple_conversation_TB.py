@@ -58,8 +58,8 @@ SYNC_START_LAG = 12.0  # lead-in before instructions to sync presentation timing
 KEY_PASS = "1"
 KEY_QUIT = "escape"
 KEY_TRIGGER = "space"
-TTL_KEY = "equal"
-TTL_ACCEPT = {"equal", "="}
+TTL_KEY = "5"
+TTL_ACCEPT = {"equal", "=",TTL_KEY}
 TRIGGER_ACCEPT = {"space", KEY_TRIGGER}
 
 CSV_FILENAME = "participant_counterbalancing.csv"
@@ -160,6 +160,13 @@ def main(
 
     win = create_window(scanner=scanner, size=WIN_SIZE, fullscr=FULLSCR)
     make_text = text_factory(win, letter_height=LETTER_H, wrap_width=WRAP_W)
+
+    # Trackball: treated as a standard mouse
+    # On the 932 box, make sure the device is in a HID mouse/trackball mode.
+    trackball = event.Mouse(win=win, visible=False)
+
+    # For debouncing the pass button (left button on the trackball)
+    last_pass_pressed = False
 
     show_instructions = make_text(text="")
     show_sync = make_text(text="Syncing start time with your partner...")
@@ -317,7 +324,7 @@ def main(
     role_text = (
         "YOUR TURN TO SPEAK" if initial_role.is_speaker else "YOUR TURN TO LISTEN"
     )
-    pass_text = "Press '1' to pass the mic." if initial_role.is_speaker else ""
+    pass_text = "Press trackball button to pass the mic." if initial_role.is_speaker else ""
     show_topic.setText(f"Problem topic: {conflict_text}")
 
     show_role_txt.setText(role_text)
@@ -360,7 +367,7 @@ def main(
             if not turn_event or turn_event.source is not TurnEventSource.REMOTE_PASS:
                 continue
             show_role_txt.setText("YOUR TURN TO SPEAK")
-            show_pass.setText("Press '1' to pass the mic.")
+            show_pass.setText("Press trackball button to pass the mic.")
             toggled_role = "speaker"
             logger.log_timing(
                 role_label=toggled_role,
@@ -389,27 +396,54 @@ def main(
         show_timer.setText(f"{remaining} seconds")
         win.flip()
 
+        # ------ 1) Keyboard pass / quit ------
         keys = event.getKeys(keyList=[KEY_PASS, KEY_QUIT], timeStamped=comm_clock)
+        key_from_kb = None
         if keys:
-            key, _rt = keys[-1]
+            key_from_kb, rt_kb = keys[-1]
+
+        # ------ 2) Trackball pass (left button) ------
+        # trackball buttons: [left, middle, right]
+        buttons = trackball.getPressed()
+        pass_pressed_now = bool(buttons[0])
+
+        # Edge detection: only trigger on 0 -> 1 transition
+        key_from_tb = None
+        if pass_pressed_now and not last_pass_pressed:
+            key_from_tb = KEY_PASS  # pretend we saw a '1' press from keyboard
+
+        # Update debounce state
+        last_pass_pressed = pass_pressed_now
+
+        # Decide which "key" to act on (trackball gets priority if both fire)
+        key = key_from_tb or key_from_kb
+
+        if key is not None:
             if key == KEY_QUIT:
                 if conv_session is not None:
                     conv_session.close()
                 logger.close()
                 win.close()
                 core.quit()
+
             elif key == KEY_PASS:
+                # Only speakers can pass
                 if not turn_manager.is_speaker:
+                    # ignore if listener presses the trackball
                     continue
+
                 time_here = time.time()
                 run_here = run_clock.getTime()
                 comm_here = comm_clock.getTime()
+
                 turn_manager.pass_turn(
                     run_time=run_here, phase_time=comm_here, wall_time=time_here
                 )
+
                 show_role_txt.setText("YOUR TURN TO LISTEN")
                 show_pass.setText("")
                 toggled_role = "listener"
+
                 logger.log_timing(
                     role_label=toggled_role,
                     wall_time=time_here,

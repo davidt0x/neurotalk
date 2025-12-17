@@ -1,0 +1,1 @@
+python couple_conversation.py --pid 042 --session 1 --conflict "Finances" --remote-ip 169.254.73.227 --scanner skyra --nat 1

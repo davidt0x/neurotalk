@@ -1,12 +1,3 @@
-"""
-Couple Conversation Task (speaker/listener with pass key).
-- Waits for TTL '=' (aka 'equal'), brief blank, then runs COMM_S with pass toggles.
-- Logs:
-  * data/<base>_CONV_min_<date>.csv (main wide CSV via ExperimentHandler)
-  * data/<base>_CONV_TimingsLog_<date>.csv (minimal timings log)
-  * data/<base>_CONV_TTLtimestamps_<date>.csv (verbose TTL pings)
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -28,7 +19,6 @@ if __package__:
     )
 else:  # pragma: no cover - script-mode support
     import sys
-    from pathlib import Path
 
     sys.path.append(str(Path(__file__).resolve().parents[1]))
     from couple_tasks.log import TaskLogger  # type: ignore[import-not-found]
@@ -40,39 +30,45 @@ else:  # pragma: no cover - script-mode support
         slug,
         text_factory,
     )
+
 from neurotalk.config import AudioConfig, NetworkConfig, RecordingConfig, SessionConfig
 from neurotalk.session import ConversationSession
 from neurotalk.turns import TurnEventSource, TurnManager, TurnRole
 
 # ---------- config ----------
-SCANNER = None  # default monitor profile (override via --scanner)
+SCANNER = None
 WIN_SIZE = (1280, 800)
 FULLSCR = True
 LETTER_H = 0.07
 WRAP_W = 2
 
-INSTR_BLANK_S = 10.0  # blank after instruction/trigger, before conversation UI
-COMM_S = 600.0
-SYNC_START_LAG = 12.0  # lead-in before instructions to sync presentation timing
+INTRO_S = 10.0  # intro dwell before communication
+COMM_S = 600.0  # communication phase duration (s)
+SYNC_START_LAG = 12.0  # lead-in before instructions to sync timing
 
 KEY_PASS = "1"
 KEY_QUIT = "escape"
-KEY_TRIGGER = "space"
-TTL_KEY = "equal"
-TTL_ACCEPT = {"equal", "="}
-TRIGGER_ACCEPT = {"space", KEY_TRIGGER}
+TTL_KEY = "5"  # for TTL pings during phases
+TTL_ACCEPT = {"equal", "=", TTL_KEY}
 
+RUN_NUM = 1
 CSV_FILENAME = "participant_counterbalancing.csv"
-SESSION_TYPE = "couple"  # fixed for this task
+SESSION_TYPE = "neutral"  # fixed for this task
 
 
-# ----------------------------------------------------
+def canonical_topic(topic: str) -> str:
+    mapping = {
+        "air": "Air pollution",
+        "tuition": "Cost of tuition",
+    }
+    cleaned = (topic or "").strip()
+    return mapping.get(cleaned.lower(), cleaned)
+
+
 def main(
     *,
-    scanner: str | None = SCANNER,
     pid: str,
     session: int,
-    conflict: str,
     csv_path: str,
     remote_ip: str,
     record_dir: str,
@@ -85,29 +81,69 @@ def main(
     nat_role: int | None,
     chunk_frames: int,
     sample_rate: int,
-    mixdown: bool = True,
-    mix_track: str | None = None,
-    mock_audio: bool = False,
-    log_level: str = "WARNING",
+    mixdown: bool,
+    mix_track: str | None,
+    mock_audio: bool,
+    log_level: str,
 ):
     if session not in (1, 2):
         msg = "Session must be 1 or 2"
         raise ValueError(msg)
-    if not (conflict and conflict.strip()):
-        msg = "You must provide a non-empty --conflict string"
-        raise ValueError(msg)
 
     dyad, role = decode_pid(pid)
-
     assignment = load_assignment_row(csv_path, pid)
     starters = assignment.starters()
     exp_condition = assignment.condition
 
+    discussion_topic = (
+        assignment.first_topic if session == 1 else assignment.second_topic
+    )
+    discussion_topic = (discussion_topic or "").strip()
+    if not discussion_topic:
+        which = "first_topic" if session == 1 else "second_topic"
+        msg = (
+            f"No discussion topic found in CSV for participant {pid} session {session} "
+            f"(expected column '{which}' to be non-empty)."
+        )
+        raise ValueError(msg)
+    conflict_text = discussion_topic
+    display_topic = canonical_topic(conflict_text)
+
+    persuade_instr_text = (
+        "Next, you and your partner will discuss how the charity funds should be allocated.\n"
+        f"You'll focus on how to address: {display_topic}.\n\n\n"
+        "IMPORTANT: During this conversation, try to PERSUADE the other person of your opinion.\n"
+        "We are studying how persuasion works in the brain, so please try to convince the other \n"
+        "person of your opinion as much as possible and get them to understand your perspective.\n"
+        "These instructions are only for you. So, please don't share them with your partner.\n\n\n"
+        "You will have 10 minutes for this conversation. \n"
+        "A timer will show you how many seconds are left.\n\n\n"
+        "Tell the experimenter when you are ready to begin.\n"
+        "You’ll first see a fixation cross for 10 seconds.\n"
+        "After that, you will see instructions to begin the conversation."
+    )
+    compromise_instr_text = (
+        "Next, you and your partner will discuss how the charity funds should be allocated.\n"
+        f"You'll focus on how to address: {display_topic}.\n\n\n"
+        "IMPORTANT: During this conversation, try to find a JOINT SOLUTION that you both agree on.\n"
+        "We are studying how collaboration works in the brain, so please try to reconcile any \n"
+        "differences of opinion as much as possible and look for a shared perspective.\n"
+        "These instructions are only for you. So, please don't share them with your partner.\n\n\n"
+        "You will have 10 minutes for this conversation. \n"
+        "A timer will show you how many seconds are left.\n\n\n"
+        "Tell the experimenter when you are ready to begin.\n"
+        "You’ll first see a fixation cross for 10 seconds.\n"
+        "After that, you will see instructions to begin the conversation."
+    )
+
+    cond_lower = (exp_condition or "").strip().lower()
+    conv_instr_text = (
+        persuade_instr_text if cond_lower.startswith("persu") else compromise_instr_text
+    )
+
     first_speaker = pick_first_speaker(
-        starters, session=session, session_type="couple"
-    )  # 'A' or 'B'
-    conflict_text = conflict.strip()
-    conflict_slug = slug(conflict_text)
+        starters, session=session, session_type="neutral"
+    )
 
     recording_dir = Path(record_dir)
     recording_dir.mkdir(parents=True, exist_ok=True)
@@ -134,9 +170,7 @@ def main(
         audio=audio,
         recording=recording,
     )
-    conv_session: ConversationSession | None = None
-
-    conv_session = ConversationSession(session_cfg)
+    conv_session: ConversationSession | None = ConversationSession(session_cfg)
     turn_manager = TurnManager(conv_session)
     conv_session.connect()
     conv_session.enable_transmit(False)
@@ -148,26 +182,32 @@ def main(
         session_type=SESSION_TYPE,
         exp_condition=exp_condition,
         first_speaker=first_speaker,
-        conflict_text_slug=conflict_slug,
+        conflict_text_slug=slug(conflict_text),
         task_code="CONV",
         dyad=dyad,
         participant_role=role,
         conflict_text=conflict_text,
     )
     level_name = log_level.upper()
-    level_value = getattr(logging, level_name, logging.WARNING)
-    logging.console.setLevel(level_value)
+    logging.console.setLevel(getattr(logging, level_name, logging.WARNING))
 
-    win = create_window(scanner=scanner, size=WIN_SIZE, fullscr=FULLSCR)
+    win = create_window(scanner=SCANNER, size=WIN_SIZE, fullscr=FULLSCR)
     make_text = text_factory(win, letter_height=LETTER_H, wrap_width=WRAP_W)
+
+    # Trackball: treated as a standard mouse
+    # On the 932 box, make sure the device is in a HID mouse/trackball mode.
+    trackball = event.Mouse(win=win, visible=False)
+
+    # For debouncing the pass button (left button on the trackball)
+    last_pass_pressed = False
 
     show_instructions = make_text(text="")
     show_sync = make_text(text="Syncing start time with your partner...")
     show_role_txt = make_text(text="", pos=(0, 0.65))
     show_pass = make_text(text="", pos=(0, 0.05))
     show_timer = make_text(text="", pos=(0, -0.70))
-    show_topic = make_text(text="", pos=(0, 0.35))
     show_blank = make_text(text="+", pos=(0, 0.00))
+    show_topic = make_text(text="", pos=(0, 0.35))
     show_end = make_text(text="You are now done with this task.")
 
     show_sync.setAutoDraw(True)
@@ -182,6 +222,7 @@ def main(
         if KEY_QUIT in keys:
             if conv_session is not None:
                 conv_session.close()
+                conv_session = None
             logger.close()
             win.close()
             core.quit()
@@ -189,55 +230,10 @@ def main(
         core.wait(0.01)
     show_sync.setAutoDraw(False)
 
-    cond = (exp_condition or "").strip().lower()
-    minutes = round(COMM_S / 60.0)
-
-    persuade_instr_text_couple = (
-        "Next, you will discuss a problem area in your relationship with your partner.\n"
-        f"Please discuss the following problem area: {conflict_text.upper()}.\n\n\n"
-        "IMPORTANT: During this conversation, try to PERSUADE the other person of your opinion.\n"
-        "We are studying how persuasion works in the brain, so please try to convince the other\n"
-        "person of your opinion as much as possible and get them to understand your perspective.\n"
-        "These instructions are only for you. So, please don't share them with your partner.\n\n\n"
-        f"You will have {minutes} minute{'s' if minutes != 1 else ''} for this conversation.\n"
-        "A timer will show you how many seconds are left.\n\n\n"
-        "Tell the experimenter when you are ready to begin.\n"
-        "You’ll first see a fixation cross for 10 seconds.\n"
-        "After that, you will see instructions to begin the conversation."
-    )
-
-    compromise_instr_text_couple = (
-        "Next, you will discuss a problem area in your relationship with your partner.\n"
-        f"Please discuss the following problem area: {conflict_text.upper()}.\n\n\n"
-        "IMPORTANT: During this conversation, try to find a JOINT SOLUTION that you both agree on.\n"
-        "We are studying how collaboration works in the brain, so please try to reconcile any\n"
-        "differences of opinion as much as possible and look for a shared perspective.\n"
-        "These instructions are only for you. So, please don't share them with your partner.\n\n\n"
-        f"You will have {minutes} minute{'s' if minutes != 1 else ''} for this conversation.\n"
-        "A timer will show you how many seconds are left.\n\n\n"
-        "Tell the experimenter when you are ready to begin.\n"
-        "You’ll first see a fixation cross for 10 seconds.\n"
-        "After that, you will see instructions to begin the conversation."
-    )
-
-    default_instr_text = (
-        "In this next part of the experiment you will have a conversation with your partner.\n\n"
-        f"Please discuss the following problem area: {conflict_text.upper()}.\n\n"
-        f"You will have {minutes} minute{'s' if minutes != 1 else ''} for this conversation.\n"
-        "A timer will show you how many seconds are left.\n\n"
-        "Tell the experimenter when you are ready to begin."
-    )
-
-    instr_text = (
-        persuade_instr_text_couple
-        if cond == "persuade"
-        else compromise_instr_text_couple
-        if cond == "compromise"
-        else default_instr_text
-    )
-
+    show_instructions.setText(conv_instr_text)
+    show_role_txt.setText("")
+    show_pass.setText("")
     event.clearEvents(eventType="keyboard")
-    show_instructions.setText(instr_text)
 
     trigger_source: str | None = None
     while trigger_source is None:
@@ -247,6 +243,7 @@ def main(
         if KEY_QUIT in keys:
             if conv_session is not None:
                 conv_session.close()
+                conv_session = None
             logger.close()
             win.close()
             core.quit()
@@ -275,37 +272,52 @@ def main(
         phase_clock=None,
     )
 
-    show_blank.setAutoDraw(True)
+    show_blank.draw()
     win.flip()
-    logging.info("Starting pre-conversation blank for %.1fs", INSTR_BLANK_S)
-    logger.log_timing(
-        role_label="blank_start",
-        run_clock=run_clock,
-        phase_clock=None,
-    )
     blank_clock = core.Clock()
-    blank_clock.reset()
-    while blank_clock.getTime() < INSTR_BLANK_S:
+    while blank_clock.getTime() < 1.0:
         keys = event.getKeys([TTL_KEY, KEY_QUIT])
         if keys:
+            if KEY_QUIT in keys:
+                if conv_session is not None:
+                    conv_session.close()
+                    conv_session = None
+                logger.close()
+                win.close()
+                core.quit()
             if TTL_KEY in keys:
                 logger.log_ttl(
                     role_label="",
                     segment="blank",
                     run_clock=run_clock,
-                    phase_clock=blank_clock,
+                    phase_clock=None,
                 )
                 event.clearEvents(eventType="keyboard")
-            if KEY_QUIT in keys:
-                if conv_session is not None:
-                    conv_session.close()
-                logger.close()
-                win.close()
-                core.quit()
-        win.flip()
         core.wait(0.01)
 
-    show_blank.setAutoDraw(False)
+    if INTRO_S > 0:
+        show_blank.draw()
+        win.flip()
+        intro_clock = core.Clock()
+        while intro_clock.getTime() < INTRO_S:
+            keys = event.getKeys([TTL_KEY, KEY_QUIT])
+            if keys:
+                if KEY_QUIT in keys:
+                    if conv_session is not None:
+                        conv_session.close()
+                        conv_session = None
+                    logger.close()
+                    win.close()
+                    core.quit()
+                if TTL_KEY in keys:
+                    logger.log_ttl(
+                        role_label="",
+                        segment="intro_fixation",
+                        run_clock=run_clock,
+                        phase_clock=None,
+                    )
+                    event.clearEvents(eventType="keyboard")
+            core.wait(0.01)
 
     logger.log_timing(
         role_label="Communication_start",
@@ -317,35 +329,29 @@ def main(
     role_text = (
         "YOUR TURN TO SPEAK" if initial_role.is_speaker else "YOUR TURN TO LISTEN"
     )
-    pass_text = "Press '1' to pass the mic." if initial_role.is_speaker else ""
-    show_topic.setText(f"Problem topic: {conflict_text}")
+    pass_text = "Press trackball button to pass the mic." if initial_role.is_speaker else ""
+    show_topic.setText(f"Discussion topic: {display_topic}")
 
     show_role_txt.setText(role_text)
     show_pass.setText(pass_text)
     show_role_txt.setAutoDraw(True)
-    show_pass.setAutoDraw(True)
     show_timer.setAutoDraw(True)
+    show_pass.setAutoDraw(True)
     show_topic.setAutoDraw(True)
 
     comm_clock = core.Clock()
     turn_manager.start(initial_role)
 
-    logger.experiment.addData("dyad", dyad)
-    logger.experiment.addData("session", session)
-    logger.experiment.addData("exp_condition", exp_condition)
-    logger.experiment.addData("event", "communication_start")
-    logger.experiment.addData(
-        "role", "speaker" if (role == first_speaker) else "listener"
+    current_role = "speaker" if initial_role.is_speaker else "listener"
+    logger.log_event(
+        event_name="communication_start",
+        role_label=current_role,
+        run_clock=run_clock,
+        phase_clock=comm_clock,
     )
-    logger.experiment.addData("onset_run_s", run_clock.getTime())
-    logger.experiment.addData("onset_phase_s", comm_clock.getTime())
-    logger.experiment.addData("conflict_text", conflict_text)
-    logger.experiment.addData("first_speaker", first_speaker)
-    logger.experiment.addData("participant_role", role)
-    logger.experiment.nextEntry()
 
     logger.log_timing(
-        role_label="speaker" if (role == first_speaker) else "listener",
+        role_label=current_role,
         run_clock=run_clock,
         phase_clock=comm_clock,
     )
@@ -360,7 +366,7 @@ def main(
             if not turn_event or turn_event.source is not TurnEventSource.REMOTE_PASS:
                 continue
             show_role_txt.setText("YOUR TURN TO SPEAK")
-            show_pass.setText("Press '1' to pass the mic.")
+            show_pass.setText("Press trackball button to pass the mic.")
             toggled_role = "speaker"
             logger.log_timing(
                 role_label=toggled_role,
@@ -375,6 +381,7 @@ def main(
             )
 
         current_role_label = "speaker" if turn_manager.is_speaker else "listener"
+
         keys_ttl = event.getKeys([TTL_KEY])
         if keys_ttl and (TTL_KEY in keys_ttl):
             logger.log_ttl(
@@ -389,33 +396,62 @@ def main(
         show_timer.setText(f"{remaining} seconds")
         win.flip()
 
+        # ------ 1) Keyboard pass / quit ------
         keys = event.getKeys(keyList=[KEY_PASS, KEY_QUIT], timeStamped=comm_clock)
+        key_from_kb = None
         if keys:
-            key, _rt = keys[-1]
+            key_from_kb, rt_kb = keys[-1]
+
+        # ------ 2) Trackball pass (left button) ------
+        # trackball buttons: [left, middle, right]
+        buttons = trackball.getPressed()
+        pass_pressed_now = bool(buttons[0])
+
+        # Edge detection: only trigger on 0 -> 1 transition
+        key_from_tb = None
+        if pass_pressed_now and not last_pass_pressed:
+            key_from_tb = KEY_PASS  # pretend we saw a '1' press from keyboard
+
+        # Update debounce state
+        last_pass_pressed = pass_pressed_now
+
+        # Decide which "key" to act on (trackball gets priority if both fire)
+        key = key_from_tb or key_from_kb
+
+        if key is not None:
             if key == KEY_QUIT:
                 if conv_session is not None:
                     conv_session.close()
+                    conv_session = None
                 logger.close()
                 win.close()
                 core.quit()
+
             elif key == KEY_PASS:
+                # Only speakers can pass
                 if not turn_manager.is_speaker:
+                    # ignore if listener presses the trackball
                     continue
+
                 time_here = time.time()
                 run_here = run_clock.getTime()
                 comm_here = comm_clock.getTime()
+
                 turn_manager.pass_turn(
                     run_time=run_here, phase_time=comm_here, wall_time=time_here
                 )
+
                 show_role_txt.setText("YOUR TURN TO LISTEN")
                 show_pass.setText("")
                 toggled_role = "listener"
+
                 logger.log_timing(
                     role_label=toggled_role,
                     wall_time=time_here,
                     run_time=run_here,
                     phase_time=comm_here,
                 )
+
                 logger.log_event(
                     event_name="pass_press",
                     role_label=toggled_role,
@@ -424,6 +460,15 @@ def main(
                 )
 
     turn_manager.stop()
+
+    for stim in (show_role_txt, show_timer, show_pass, show_topic):
+        stim.setAutoDraw(False)
+
+    logger.log_timing(
+        role_label="communication_end",
+        run_clock=run_clock,
+        phase_clock=comm_clock,
+    )
 
     end_role_label = (
         "speaker" if show_role_txt.text == "YOUR TURN TO SPEAK" else "listener"
@@ -440,15 +485,6 @@ def main(
     logger.experiment.addData("participant_role", role)
     logger.experiment.nextEntry()
 
-    logger.log_timing(
-        role_label="communication_end",
-        run_clock=run_clock,
-        phase_clock=comm_clock,
-    )
-
-    for stim in (show_role_txt, show_timer, show_pass, show_topic):
-        stim.setAutoDraw(False)
-
     show_end.draw()
     win.flip()
     core.wait(1.0)
@@ -459,14 +495,14 @@ def main(
             export_dir = recording_dir / "segments"
             conv_session.export_segments(export_dir)
         except Exception as exc:
-            logging.error(f"Failed to export segments: {exc}")
+            logging.error("Failed to export segments: %s", exc)
         if mixdown:
             try:
-                mix_path = conv_session.export_mix_track()
-                if mix_path:
-                    logging.info(f"Mixed audio written to {mix_path}")
+                mix_track_path = conv_session.export_mix_track()
+                if mix_track_path:
+                    logging.info("Mixed audio written to %s", mix_track_path)
             except Exception as exc:
-                logging.error(f"Failed to generate mix track: {exc}")
+                logging.error("Failed to generate mix track: %s", exc)
 
     logger.save_and_close()
     win.close()
@@ -491,13 +527,6 @@ if __name__ == "__main__":
         help="Session number (1 or 2)",
     )
     ap.add_argument(
-        "--conflict",
-        "-t",
-        type=str,
-        required=True,
-        help="Human-readable conflict topic to display/log",
-    )
-    ap.add_argument(
         "--csv",
         "-c",
         type=str,
@@ -506,7 +535,9 @@ if __name__ == "__main__":
     )
     ap.add_argument("--remote-ip", required=True, help="Peer IP address")
     ap.add_argument(
-        "--record-dir", default="data", help="Directory for NeuroTalk recordings"
+        "--record-dir",
+        default="data",
+        help="Directory for NeuroTalk recordings",
     )
     ap.add_argument(
         "--local-in", type=int, default=30002, help="Local inbound audio port"
@@ -552,12 +583,6 @@ if __name__ == "__main__":
         help="Filename (relative to --record-dir) for the mixed audio track",
     )
     ap.add_argument(
-        "--scanner",
-        choices=["skyra", "prisma"],
-        default=None,
-        help="Monitor profile to use for the scanner display (default: laptop)",
-    )
-    ap.add_argument(
         "--mock-audio",
         action="store_true",
         help="Use mock audio devices for local testing (still records streams)",
@@ -570,10 +595,8 @@ if __name__ == "__main__":
     )
     args = ap.parse_args()
     main(
-        scanner=args.scanner,
         pid=args.pid,
         session=args.session,
-        conflict=args.conflict,
         csv_path=args.csv,
         remote_ip=args.remote_ip,
         record_dir=args.record_dir,
