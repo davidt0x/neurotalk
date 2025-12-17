@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from neurotalk.config import AudioConfig, NetworkConfig, RecordingConfig, SessionConfig
+from neurotalk.config import AudioConfig, NetworkConfig, SessionConfig
 
 
 def test_from_dict_explicit(tmp_path: Path) -> None:
@@ -61,7 +61,9 @@ def test_from_dict_explicit(tmp_path: Path) -> None:
     assert cfg.recording.mix_track == Path("mix.wav")
 
 
-def test_defaults_and_yaml_roundtrip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_defaults_and_yaml_roundtrip(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     cfg_path = tmp_path / "neurotalk.yaml"
     cfg = SessionConfig()
     cfg.to_yaml(cfg_path)

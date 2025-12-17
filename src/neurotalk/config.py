@@ -9,12 +9,11 @@ legacy CONV/DIAD scripts but callers are free to override anything.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
 import yaml
-from dataclasses import asdict
 
 PortRange = tuple[int, int]
 
@@ -57,7 +56,7 @@ class NetworkConfig:
             raise ValueError(msg)
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any] | None) -> "NetworkConfig":
+    def from_dict(cls, data: Mapping[str, Any] | None) -> NetworkConfig:
         if data is None:
             return cls()
         d = dict(data)
@@ -71,6 +70,7 @@ class NetworkConfig:
 
     def to_dict(self) -> dict[str, Any]:
         return _normalize(asdict(self))
+
 
 @dataclass(slots=True)
 class AudioConfig:
@@ -115,7 +115,7 @@ class AudioConfig:
             raise ValueError(msg)
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any] | None) -> "AudioConfig":
+    def from_dict(cls, data: Mapping[str, Any] | None) -> AudioConfig:
         if data is None:
             return cls()
         d = dict(data)
@@ -123,6 +123,7 @@ class AudioConfig:
 
     def to_dict(self) -> dict[str, Any]:
         return _normalize(asdict(self))
+
 
 @dataclass(slots=True)
 class RecordingConfig:
@@ -147,7 +148,7 @@ class RecordingConfig:
     mix_track: Path | None = None
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any] | None) -> "RecordingConfig":
+    def from_dict(cls, data: Mapping[str, Any] | None) -> RecordingConfig:
         if data is None:
             return cls()
         d = dict(data)
@@ -160,6 +161,7 @@ class RecordingConfig:
 
     def to_dict(self) -> dict[str, Any]:
         return _normalize(asdict(self))
+
 
 @dataclass(slots=True)
 class SessionConfig:
@@ -199,7 +201,7 @@ class SessionConfig:
             self.role = "role"
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any] | None) -> "SessionConfig":
+    def from_dict(cls, data: Mapping[str, Any] | None) -> SessionConfig:
         data = data or {}
         if not isinstance(data, Mapping):
             msg = "Config root must be a mapping"
@@ -226,7 +228,7 @@ class SessionConfig:
         }
 
     @classmethod
-    def from_yaml(cls, path: str | Path | None = None) -> "SessionConfig":
+    def from_yaml(cls, path: str | Path | None = None) -> SessionConfig:
         cfg_path = Path(path) if path is not None else Path("neurotalk.yaml")
         if not cfg_path.exists():
             msg = f"Config file not found: {cfg_path}"

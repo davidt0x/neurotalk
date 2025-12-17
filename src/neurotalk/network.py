@@ -95,7 +95,10 @@ def open_sockets(config: NetworkConfig) -> SocketBundle:
 
     in_port, out_port, ctrl_port = config.local_ports
     logger.info(
-        "[network] Binding UDP sockets local_ports=(%s,%s,%s)", in_port, out_port, ctrl_port
+        "[network] Binding UDP sockets local_ports=(%s,%s,%s)",
+        in_port,
+        out_port,
+        ctrl_port,
     )
     try:
         inbound = _create_socket(in_port)
@@ -185,9 +188,7 @@ def hole_punch(
 
             if set(seen.keys()) == {"inbound", "outbound", "control"}:
                 tokens = {payload for payload, _ in seen.values()}
-                if len(tokens) == 1 or (
-                    HANDSHAKE_READY in tokens and len(tokens) <= 2
-                ):
+                if len(tokens) == 1 or (HANDSHAKE_READY in tokens and len(tokens) <= 2):
                     incoming_in, addr_in = seen["inbound"]
                     _, addr_out = seen["outbound"]
                     _, addr_ctrl = seen["control"]
@@ -230,7 +231,9 @@ def hole_punch(
                 if "control" in seen:
                     _, addr = seen["control"]
                     port_comm = addr[1]
-                handshake_token = HANDSHAKE_READY if HANDSHAKE_READY in tokens else any_payload
+                handshake_token = (
+                    HANDSHAKE_READY if HANDSHAKE_READY in tokens else any_payload
+                )
             else:
                 msg = "Timed out waiting for partner during auto handshake"
                 raise NetworkError(msg)

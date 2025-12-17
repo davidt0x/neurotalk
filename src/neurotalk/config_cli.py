@@ -129,7 +129,13 @@ def load_config_from_args(args: argparse.Namespace) -> SessionConfig:
         cfg.network.punch_timeout_s = float(args.punch_timeout)
 
     # Audio
-    for field in ("sample_rate_hz", "channels", "chunk_frames", "buffer_chunks", "format_tag"):
+    for field in (
+        "sample_rate_hz",
+        "channels",
+        "chunk_frames",
+        "buffer_chunks",
+        "format_tag",
+    ):
         value = getattr(args, field, None)
         if value is not None:
             setattr(cfg.audio, field, value)

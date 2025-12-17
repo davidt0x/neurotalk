@@ -1,22 +1,22 @@
-# Example NeuroTalk configuration 
+# Example NeuroTalk configuration
 
 network:
-  local_ports: [30002, 30001, 30003]          # (inbound, outbound, control) UDP ports
-  remote_hint: ["127.0.0.1", 31002, 31001, 31003]  # Remote IP/ports hint; updated after punch
-  stun_servers: []                            # Optional STUN servers for diagnostics
-  nat_role: 'auto'                                 # 0 = passive, 1 = initiator
-  punch_timeout_s: 60                         # Seconds to wait for NAT punch to complete
+  local_ports: [30002, 30001, 30003] # (inbound, outbound, control) UDP ports
+  remote_hint: ["127.0.0.1", 31002, 31001, 31003] # Remote IP/ports hint; updated after punch
+  stun_servers: [] # Optional STUN servers for diagnostics
+  nat_role: "auto" # 0 = passive, 1 = initiator
+  punch_timeout_s: 60 # Seconds to wait for NAT punch to complete
 
 audio:
-  sample_rate_hz: 16000   # PCM sample rate
-  channels: 1             # Channel count (1=mono, 2=stereo)
-  chunk_frames: 512       # Frames per audio packet (power of two)
-  buffer_chunks: 4        # Client-side chunks to buffer before playback
-  format_tag: 8           # PyAudio format tag (int16 default)
-  mock_devices: false     # Use mock audio backend if true (no real I/O)
+  sample_rate_hz: 16000 # PCM sample rate
+  channels: 1 # Channel count (1=mono, 2=stereo)
+  chunk_frames: 512 # Frames per audio packet (power of two)
+  buffer_chunks: 4 # Client-side chunks to buffer before playback
+  format_tag: 8 # PyAudio format tag (int16 default)
+  mock_devices: false # Use mock audio backend if true (no real I/O)
 
 recording:
-  directory: "data"       # Base directory for recordings
-  local_track: null       # Override local mic filename (or leave null for auto)
-  remote_track: null      # Override remote playback filename (or leave null for auto)
-  mix_track: null         # Override mixed filename (or leave null for auto)
+  directory: "data" # Base directory for recordings
+  local_track: null # Override local mic filename (or leave null for auto)
+  remote_track: null # Override remote playback filename (or leave null for auto)
+  mix_track: null # Override mixed filename (or leave null for auto)
