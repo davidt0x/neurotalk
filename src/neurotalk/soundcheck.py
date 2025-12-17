@@ -3,18 +3,23 @@ from __future__ import annotations
 import logging
 import sys
 import time
+from collections.abc import Iterable
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from types import TracebackType
+from typing import Any, cast
 
 import numpy as np
 import sounddevice as sd
 
+sf: Any | None
 try:  # optional dependency; we fall back to a generated tone if absent.
-    import soundfile as sf
+    import soundfile as _soundfile
 except Exception:  # pragma: no cover - optional dependency
-    sf = None  # type: ignore[assignment]
+    sf = None
+else:
+    sf = _soundfile
 
 
 DEFAULT_SAMPLE_RATE = 48_000
@@ -93,11 +98,16 @@ class _LoopingPlayer(AbstractContextManager["_LoopingPlayer"]):
         self._pos = 0
         self._stream: sd.OutputStream | None = None
 
-    def __enter__(self) -> "_LoopingPlayer":
+    def __enter__(self) -> _LoopingPlayer:
         self.start()
         return self
 
-    def __exit__(self, exc_type, exc, exc_tb) -> None:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         self.stop()
 
     @property
@@ -130,14 +140,20 @@ class _LoopingPlayer(AbstractContextManager["_LoopingPlayer"]):
         finally:
             self._stream = None
 
-    def _callback(self, outdata: np.ndarray, frames: int, _time_info: Any, status: sd.CallbackFlags) -> None:
+    def _callback(
+        self,
+        outdata: np.ndarray,
+        frames: int,
+        _time_info: Any,
+        status: sd.CallbackFlags,
+    ) -> None:
         if status:
             logging.debug("sounddevice status: %s", status)
 
         end = self._pos + frames
         clip = self._clip
         if end <= clip.shape[0]:
-            chunk = clip[self._pos:end]
+            chunk = clip[self._pos : end]
         else:
             first = clip[self._pos :]
             remaining = end - clip.shape[0]
@@ -160,16 +176,18 @@ class _KeyPoller:
         return self._poll_posix()
 
     def _poll_windows(self) -> Iterable[str]:
-        import msvcrt  # type: ignore[import-not-found]
+        import msvcrt  # noqa: PLC0415
+
+        msvcrt_mod = cast(Any, msvcrt)
 
         keys: list[str] = []
-        while msvcrt.kbhit():
-            key = msvcrt.getwch()
+        while msvcrt_mod.kbhit():
+            key = msvcrt_mod.getwch()
             keys.append(key)
         return keys
 
     def _poll_posix(self) -> Iterable[str]:
-        import select
+        import select  # noqa: PLC0415
 
         keys: list[str] = []
         ready, _, _ = select.select([sys.stdin], [], [], 0)
@@ -234,8 +252,8 @@ def run_volume_check(
         finished = False
         while not finished:
             time.sleep(0.05)
-            for key in poller.poll():
-                key = key.lower()
+            for _key in poller.poll():
+                key = _key.lower()
                 if key in ("q", "\x1b"):
                     msg = "Volume check aborted by user"
                     raise KeyboardInterrupt(msg)

@@ -51,6 +51,32 @@ logger = logging.getLogger(__name__)
 ControlHandler = Callable[[ControlMessageType, object | None], None]
 
 
+def _ensure_logging_configured(default_level: int = logging.INFO) -> None:
+    """
+    Install a basic logging configuration if the application did not set one.
+
+    Uses Rich for nicer output when available.
+    """
+
+    root = logging.getLogger()
+    if root.handlers:
+        return
+    try:
+        from rich.logging import RichHandler  # noqa: PLC0415
+
+        logging.basicConfig(
+            level=default_level,
+            format="%(message)s",
+            datefmt="[%X]",
+            handlers=[RichHandler(rich_tracebacks=False, markup=True)],
+        )
+    except Exception:  # pragma: no cover - only hit if Rich missing/broken
+        logging.basicConfig(
+            level=default_level,
+            format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        )
+
+
 @dataclass
 class SessionState:
     """Mutable state tracked across the lifetime of a session."""
@@ -121,8 +147,14 @@ class ConversationSession:
 
         if self.state.sockets is not None:
             return
+        _ensure_logging_configured(logging.INFO)
 
         net_cfg: NetworkConfig = self.config.network
+        logger.info(
+            "[network] Initializing session sockets remote_hint=%s nat_role=%s",
+            net_cfg.remote_hint,
+            net_cfg.nat_role,
+        )
         bundle = open_sockets(net_cfg)
         if net_cfg.stun_servers:
             run_stun_diagnostics(net_cfg.stun_servers)

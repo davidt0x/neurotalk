@@ -17,7 +17,9 @@ def _parse_with_args(args: list[str]) -> SessionConfig:
     return load_config_from_args(ns)
 
 
-def test_loads_default_when_no_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_loads_default_when_no_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.chdir(tmp_path)
     cfg = _parse_with_args([])
     assert cfg.participant_id == "participant"
@@ -63,7 +65,9 @@ def test_loads_from_config_and_overrides(tmp_path: Path) -> None:
 
 def test_parses_remote_hint_and_metadata(tmp_path: Path) -> None:
     cfg_path = tmp_path / "neurotalk.yaml"
-    cfg_path.write_text(yaml.safe_dump({"network": {"remote_hint": ["1.2.3.4", 4, 5, 6]}}))
+    cfg_path.write_text(
+        yaml.safe_dump({"network": {"remote_hint": ["1.2.3.4", 4, 5, 6]}})
+    )
     args = [
         "--config",
         str(cfg_path),
@@ -82,5 +86,5 @@ def test_missing_ports_raises() -> None:
     parser = argparse.ArgumentParser()
     add_config_arguments(parser)
     ns = parser.parse_args(["--local-ports", "1,2"])
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Expected 3 comma-separated ports"):
         load_config_from_args(ns)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+from typing import cast
 
 from rich.console import Console
 
@@ -47,9 +48,8 @@ def add_config_arguments(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--nat-role",
-        type=int,
-        choices=[0, 1],
-        help="0 = passive, 1 = initiator.",
+        choices=["0", "1", "auto", "passive", "active"],
+        help="0/passive = wait, 1/active = initiate, auto = probe and wait.",
     )
     parser.add_argument(
         "--punch-timeout",
@@ -117,7 +117,9 @@ def load_config_from_args(args: argparse.Namespace) -> SessionConfig:
     # Network
     local_ports = getattr(args, "local_ports", None)
     if local_ports:
-        cfg.network.local_ports = _parse_ports(local_ports, expected=3)
+        cfg.network.local_ports = cast(
+            tuple[int, int, int], _parse_ports(local_ports, expected=3)
+        )
     remote_hint = getattr(args, "remote_hint", None)
     if remote_hint:
         cfg.network.remote_hint = _parse_remote_hint(remote_hint)
@@ -125,12 +127,18 @@ def load_config_from_args(args: argparse.Namespace) -> SessionConfig:
     if stun_servers:
         cfg.network.stun_servers = tuple(stun_servers)
     if getattr(args, "nat_role", None) is not None:
-        cfg.network.nat_role = int(args.nat_role)
+        cfg.network.nat_role = _coerce_nat_role(args.nat_role)
     if getattr(args, "punch_timeout", None) is not None:
         cfg.network.punch_timeout_s = float(args.punch_timeout)
 
     # Audio
-    for field in ("sample_rate_hz", "channels", "chunk_frames", "buffer_chunks", "format_tag"):
+    for field in (
+        "sample_rate_hz",
+        "channels",
+        "chunk_frames",
+        "buffer_chunks",
+        "format_tag",
+    ):
         value = getattr(args, field, None)
         if value is not None:
             setattr(cfg.audio, field, value)
@@ -165,8 +173,20 @@ def _parse_remote_hint(text: str) -> tuple[str, int, int, int]:
         msg = "Remote hint must be ip,inbound,outbound,control"
         raise ValueError(msg)
     ip = parts[0]
-    ports = tuple(int(p) for p in parts[1:])
-    return (ip, *ports)  # type: ignore[misc]
+    port_in, port_out, port_ctrl = (int(p) for p in parts[1:])
+    return (ip, port_in, port_out, port_ctrl)
+
+
+def _coerce_nat_role(value: str | int) -> int | str:
+    text = str(value).strip().lower()
+    if text in {"0", "passive"}:
+        return 0
+    if text in {"1", "active"}:
+        return 1
+    if text == "auto":
+        return "auto"
+    msg = "nat-role must be 0/passive, 1/active, or auto"
+    raise ValueError(msg)
 
 
 def _parse_metadata(text: str) -> dict[str, str]:

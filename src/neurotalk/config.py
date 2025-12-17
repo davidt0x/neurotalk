@@ -9,12 +9,11 @@ legacy CONV/DIAD scripts but callers are free to override anything.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import yaml
-from dataclasses import asdict
 
 PortRange = tuple[int, int]
 
@@ -36,7 +35,7 @@ class NetworkConfig:
         Optional iterable of STUN endpoints for diagnostics.
     nat_role:
         0 when this machine is reachable without NAT; 1 when it must initiate
-        the hole punch.
+        the hole punch. Use ``"auto"`` to allow either side to start and punch.
     punch_timeout_s:
         Number of seconds to wait for handshake completion.
     """
@@ -44,16 +43,20 @@ class NetworkConfig:
     local_ports: tuple[int, int, int] = (30002, 30001, 30003)
     remote_hint: tuple[str, int, int, int] = ("127.0.0.1", 30002, 30001, 30003)
     stun_servers: Sequence[str] = ()
-    nat_role: int = 1
+    nat_role: int | str = "auto"
     punch_timeout_s: float = 30.0
 
     def __post_init__(self) -> None:
-        if self.nat_role not in (0, 1):
-            msg = "nat_role must be 0 (passive) or 1 (active)"
+        role = self.nat_role
+        if isinstance(role, str):
+            role = role.lower()
+            object.__setattr__(self, "nat_role", role)
+        if role not in (0, 1, "auto"):
+            msg = "nat_role must be 0 (passive), 1 (active), or 'auto'"
             raise ValueError(msg)
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any] | None) -> "NetworkConfig":
+    def from_dict(cls, data: Mapping[str, Any] | None) -> NetworkConfig:
         if data is None:
             return cls()
         d = dict(data)
@@ -66,7 +69,8 @@ class NetworkConfig:
         return cls(**d)
 
     def to_dict(self) -> dict[str, Any]:
-        return _normalize(asdict(self))
+        return cast(dict[str, Any], _normalize(asdict(self)))
+
 
 @dataclass(slots=True)
 class AudioConfig:
@@ -111,14 +115,15 @@ class AudioConfig:
             raise ValueError(msg)
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any] | None) -> "AudioConfig":
+    def from_dict(cls, data: Mapping[str, Any] | None) -> AudioConfig:
         if data is None:
             return cls()
         d = dict(data)
         return cls(**d)
 
     def to_dict(self) -> dict[str, Any]:
-        return _normalize(asdict(self))
+        return cast(dict[str, Any], _normalize(asdict(self)))
+
 
 @dataclass(slots=True)
 class RecordingConfig:
@@ -143,7 +148,7 @@ class RecordingConfig:
     mix_track: Path | None = None
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any] | None) -> "RecordingConfig":
+    def from_dict(cls, data: Mapping[str, Any] | None) -> RecordingConfig:
         if data is None:
             return cls()
         d = dict(data)
@@ -155,7 +160,8 @@ class RecordingConfig:
         return cls(**d)
 
     def to_dict(self) -> dict[str, Any]:
-        return _normalize(asdict(self))
+        return cast(dict[str, Any], _normalize(asdict(self)))
+
 
 @dataclass(slots=True)
 class SessionConfig:
@@ -195,11 +201,12 @@ class SessionConfig:
             self.role = "role"
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any] | None) -> "SessionConfig":
-        data = data or {}
-        if not isinstance(data, Mapping):
+    def from_dict(cls, data: Mapping[str, Any] | None) -> SessionConfig:
+        data_obj: object = data or {}
+        if not isinstance(data_obj, Mapping):
             msg = "Config root must be a mapping"
             raise ValueError(msg)
+        data = data_obj
         return cls(
             participant_id=str(data.get("participant_id", "")),
             role=str(data.get("role", "")),
@@ -222,7 +229,7 @@ class SessionConfig:
         }
 
     @classmethod
-    def from_yaml(cls, path: str | Path | None = None) -> "SessionConfig":
+    def from_yaml(cls, path: str | Path | None = None) -> SessionConfig:
         cfg_path = Path(path) if path is not None else Path("neurotalk.yaml")
         if not cfg_path.exists():
             msg = f"Config file not found: {cfg_path}"
