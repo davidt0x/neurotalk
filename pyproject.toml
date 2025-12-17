@@ -140,6 +140,14 @@ ignore_missing_imports = true
 module = ["pytest", "pytest.*"]
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+module = ["yaml", "rich", "rich.*", "psychtoolbox", "soundfile"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["psychtoolbox.*"]
+ignore_missing_imports = true
+
 
 [tool.ruff]
 

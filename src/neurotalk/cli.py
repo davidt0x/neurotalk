@@ -6,7 +6,7 @@ from typing import Any
 
 
 def _list_sounddevice() -> list[dict[str, Any]]:
-    import sounddevice as sd # noqa: PLC0415, I001
+    import sounddevice as sd  # noqa: PLC0415
 
     hostapis = sd.query_hostapis()
     devices = sd.query_devices()
@@ -30,7 +30,7 @@ def _list_sounddevice() -> list[dict[str, Any]]:
 
 def _list_ptb() -> list[dict[str, Any]]:
     try:
-        from psychtoolbox import audio # noqa: PLC0415, I001
+        from psychtoolbox import audio  # noqa: PLC0415
     except Exception as exc:  # pragma: no cover - optional dep
         msg = (
             "psychtoolbox/psychopy is required for --backend ptb; "

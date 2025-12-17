@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+from typing import cast
 
 from rich.console import Console
 
@@ -116,7 +117,9 @@ def load_config_from_args(args: argparse.Namespace) -> SessionConfig:
     # Network
     local_ports = getattr(args, "local_ports", None)
     if local_ports:
-        cfg.network.local_ports = _parse_ports(local_ports, expected=3)
+        cfg.network.local_ports = cast(
+            tuple[int, int, int], _parse_ports(local_ports, expected=3)
+        )
     remote_hint = getattr(args, "remote_hint", None)
     if remote_hint:
         cfg.network.remote_hint = _parse_remote_hint(remote_hint)
@@ -170,8 +173,8 @@ def _parse_remote_hint(text: str) -> tuple[str, int, int, int]:
         msg = "Remote hint must be ip,inbound,outbound,control"
         raise ValueError(msg)
     ip = parts[0]
-    ports = tuple(int(p) for p in parts[1:])
-    return (ip, *ports)  # type: ignore[misc]
+    port_in, port_out, port_ctrl = (int(p) for p in parts[1:])
+    return (ip, port_in, port_out, port_ctrl)
 
 
 def _coerce_nat_role(value: str | int) -> int | str:

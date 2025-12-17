@@ -99,8 +99,7 @@ def choose_device(ptb_devices, name_hint, host_hint):
             return dev
     for dev in ptb_devices:
         if dev["NrOutputChannels"] == 2 and (
-            host_hint is None
-            or host_hint.lower() in dev["HostAudioAPIName"].lower()
+            host_hint is None or host_hint.lower() in dev["HostAudioAPIName"].lower()
         ):
             return dev
     for dev in ptb_devices:

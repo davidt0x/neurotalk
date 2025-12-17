@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import yaml
 
@@ -69,7 +69,7 @@ class NetworkConfig:
         return cls(**d)
 
     def to_dict(self) -> dict[str, Any]:
-        return _normalize(asdict(self))
+        return cast(dict[str, Any], _normalize(asdict(self)))
 
 
 @dataclass(slots=True)
@@ -122,7 +122,7 @@ class AudioConfig:
         return cls(**d)
 
     def to_dict(self) -> dict[str, Any]:
-        return _normalize(asdict(self))
+        return cast(dict[str, Any], _normalize(asdict(self)))
 
 
 @dataclass(slots=True)
@@ -160,7 +160,7 @@ class RecordingConfig:
         return cls(**d)
 
     def to_dict(self) -> dict[str, Any]:
-        return _normalize(asdict(self))
+        return cast(dict[str, Any], _normalize(asdict(self)))
 
 
 @dataclass(slots=True)
@@ -202,10 +202,11 @@ class SessionConfig:
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any] | None) -> SessionConfig:
-        data = data or {}
-        if not isinstance(data, Mapping):
+        data_obj: object = data or {}
+        if not isinstance(data_obj, Mapping):
             msg = "Config root must be a mapping"
             raise ValueError(msg)
+        data = data_obj
         return cls(
             participant_id=str(data.get("participant_id", "")),
             role=str(data.get("role", "")),

@@ -62,7 +62,7 @@ def _ensure_logging_configured(default_level: int = logging.INFO) -> None:
     if root.handlers:
         return
     try:
-        from rich.logging import RichHandler # noqa: PLC0415, I001
+        from rich.logging import RichHandler  # noqa: PLC0415
 
         logging.basicConfig(
             level=default_level,
