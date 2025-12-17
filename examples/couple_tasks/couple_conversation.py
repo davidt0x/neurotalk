@@ -473,24 +473,13 @@ def _build_parser() -> argparse.ArgumentParser:
         action=argparse.BooleanOptionalAction,
         help="Produce a mixed speaker/listener WAV file (use --no-mixdown to skip)",
     )
-    ap.add_argument(
-        "--mix-track",
-        type=str,
-        default=None,
-        help="Filename (relative to --record-dir) for the mixed audio track",
-    )
-    ap.add_argument(
+    parser.add_argument(
         "--scanner",
         choices=["skyra", "prisma"],
         default=None,
         help="Monitor profile to use for the scanner display (default: laptop)",
     )
-    ap.add_argument(
-        "--mock-audio",
-        action="store_true",
-        help="Use mock audio devices for local testing (still records streams)",
-    )
-    ap.add_argument(
+    parser.add_argument(
         "--log-level",
         type=str,
         default="WARNING",
