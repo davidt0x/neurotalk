@@ -47,9 +47,8 @@ def add_config_arguments(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--nat-role",
-        type=int,
-        choices=[0, 1],
-        help="0 = passive, 1 = initiator.",
+        choices=["0", "1", "auto", "passive", "active"],
+        help="0/passive = wait, 1/active = initiate, auto = probe and wait.",
     )
     parser.add_argument(
         "--punch-timeout",
@@ -125,7 +124,7 @@ def load_config_from_args(args: argparse.Namespace) -> SessionConfig:
     if stun_servers:
         cfg.network.stun_servers = tuple(stun_servers)
     if getattr(args, "nat_role", None) is not None:
-        cfg.network.nat_role = int(args.nat_role)
+        cfg.network.nat_role = _coerce_nat_role(args.nat_role)
     if getattr(args, "punch_timeout", None) is not None:
         cfg.network.punch_timeout_s = float(args.punch_timeout)
 
@@ -167,6 +166,18 @@ def _parse_remote_hint(text: str) -> tuple[str, int, int, int]:
     ip = parts[0]
     ports = tuple(int(p) for p in parts[1:])
     return (ip, *ports)  # type: ignore[misc]
+
+
+def _coerce_nat_role(value: str | int) -> int | str:
+    text = str(value).strip().lower()
+    if text in {"0", "passive"}:
+        return 0
+    if text in {"1", "active"}:
+        return 1
+    if text == "auto":
+        return "auto"
+    msg = "nat-role must be 0/passive, 1/active, or auto"
+    raise ValueError(msg)
 
 
 def _parse_metadata(text: str) -> dict[str, str]:

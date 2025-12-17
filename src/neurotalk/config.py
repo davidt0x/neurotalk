@@ -36,7 +36,7 @@ class NetworkConfig:
         Optional iterable of STUN endpoints for diagnostics.
     nat_role:
         0 when this machine is reachable without NAT; 1 when it must initiate
-        the hole punch.
+        the hole punch. Use ``"auto"`` to allow either side to start and punch.
     punch_timeout_s:
         Number of seconds to wait for handshake completion.
     """
@@ -44,12 +44,16 @@ class NetworkConfig:
     local_ports: tuple[int, int, int] = (30002, 30001, 30003)
     remote_hint: tuple[str, int, int, int] = ("127.0.0.1", 30002, 30001, 30003)
     stun_servers: Sequence[str] = ()
-    nat_role: int = 1
+    nat_role: int | str = "auto"
     punch_timeout_s: float = 30.0
 
     def __post_init__(self) -> None:
-        if self.nat_role not in (0, 1):
-            msg = "nat_role must be 0 (passive) or 1 (active)"
+        role = self.nat_role
+        if isinstance(role, str):
+            role = role.lower()
+            object.__setattr__(self, "nat_role", role)
+        if role not in (0, 1, "auto"):
+            msg = "nat_role must be 0 (passive), 1 (active), or 'auto'"
             raise ValueError(msg)
 
     @classmethod

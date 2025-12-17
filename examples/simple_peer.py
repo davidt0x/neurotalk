@@ -16,6 +16,18 @@ from neurotalk.session import ConversationSession
 LOGGER = logging.getLogger("neurotalk.simple_peer")
 
 
+def _coerce_nat_role(value: str | int | None) -> int | str:
+    text = "auto" if value is None else str(value).strip().lower()
+    if text in {"0", "passive"}:
+        return 0
+    if text in {"1", "active"}:
+        return 1
+    if text == "auto":
+        return "auto"
+    msg = "nat-role must be 0/passive, 1/active, or auto"
+    raise argparse.ArgumentTypeError(msg)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Simple NeuroTalk peer")
     parser.add_argument("remote_ip", help="Peer IP address")
@@ -50,10 +62,9 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--nat-role",
-        type=int,
-        choices=[0, 1],
-        default=None,
-        help="NAT role: 0=passive, 1=active",
+        choices=["0", "1", "auto", "passive", "active"],
+        default="auto",
+        help="NAT role: 0/passive waits, 1/active initiates, auto either side first",
     )
     parser.add_argument(
         "--chunk-frames", type=int, default=512, help="Audio buffer size (default: 512)"
@@ -84,7 +95,9 @@ def parse_args() -> argparse.Namespace:
         default="INFO",
         help="Logging level (e.g., INFO, DEBUG) for instrumentation output",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    args.nat_role = _coerce_nat_role(args.nat_role)
+    return args
 
 
 def build_session(args: argparse.Namespace) -> ConversationSession:
@@ -176,8 +189,6 @@ def main() -> None:
         level=getattr(logging, args.log_level.upper(), logging.INFO),
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
-    if args.nat_role is None:
-        args.nat_role = 1 if args.role.upper() == "A" else 0
     if args.speaker_order is None:
         args.speaker_order = "first" if args.role.upper() == "A" else "second"
     session = build_session(args)
