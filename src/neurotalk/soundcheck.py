@@ -465,8 +465,7 @@ def _run_console_conversation_soundcheck(
         "to a comfortable level."
     )
     logging.info(
-        "[soundcheck] Controls: '+' louder, '-' quieter, Enter when ready "
-        "(max 500%%)."
+        "[soundcheck] Controls: '+' louder, '-' quieter, Enter when ready (max 500%%)."
     )
     logging.info("[soundcheck] Ctrl+C to abort.")
 
