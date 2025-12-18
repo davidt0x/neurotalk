@@ -42,14 +42,14 @@ FULLSCR = True
 LETTER_H = 0.07
 WRAP_W = 2
 
-INTRO_S = 2.0  # intro dwell before communication
-COMM_S = 30.0  # communication phase duration (s)
+INTRO_S = 10.0  # intro dwell before communication
+COMM_S = 600.0  # communication phase duration (s)
 SYNC_START_LAG = 12.0  # lead-in before instructions to sync timing
 
 KEY_PASS = "1"
 KEY_QUIT = "escape"
 TTL_KEY = "equal"  # for TTL pings during phases
-TTL_ACCEPT = {"equal", "="}
+TTL_ACCEPT = {"equal", "=", TTL_KEY}
 
 RUN_NUM = 1
 CSV_FILENAME = "participant_counterbalancing.csv"
@@ -370,15 +370,21 @@ def main(
                 logger.close()
                 win.close()
                 core.quit()
+
             elif key == KEY_PASS:
+                # Only speakers can pass
                 if not turn_manager.is_speaker:
+                    # ignore if listener presses the trackball
                     continue
+
                 time_here = time.time()
                 run_here = run_clock.getTime()
                 comm_here = comm_clock.getTime()
+
                 turn_manager.pass_turn(
                     run_time=run_here, phase_time=comm_here, wall_time=time_here
                 )
+
                 show_role_txt.setText("YOUR TURN TO LISTEN")
                 show_pass.setText("")
                 toggled_role = "listener"

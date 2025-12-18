@@ -60,7 +60,7 @@ KEY_PASS = "1"
 KEY_QUIT = "escape"
 KEY_TRIGGER = "space"
 TTL_KEY = "equal"
-TTL_ACCEPT = {"equal", "="}
+TTL_ACCEPT = {"equal", "=", TTL_KEY}
 TRIGGER_ACCEPT = {"space", KEY_TRIGGER}
 
 CSV_FILENAME = "participant_counterbalancing.csv"
@@ -105,9 +105,7 @@ def main(
     recording_dir = cfg.recording.directory
     recording_dir.mkdir(parents=True, exist_ok=True)
 
-    conv_session: ConversationSession | None = None
-
-    conv_session = ConversationSession(cfg)
+    conv_session: ConversationSession | None = ConversationSession(cfg)
     turn_manager = TurnManager(conv_session)
     conv_session.connect()
     conv_session.enable_transmit(False)
@@ -369,18 +367,25 @@ def main(
                 logger.close()
                 win.close()
                 core.quit()
+
             elif key == KEY_PASS:
+                # Only speakers can pass
                 if not turn_manager.is_speaker:
+                    # ignore if listener presses the trackball
                     continue
+
                 time_here = time.time()
                 run_here = run_clock.getTime()
                 comm_here = comm_clock.getTime()
+
                 turn_manager.pass_turn(
                     run_time=run_here, phase_time=comm_here, wall_time=time_here
                 )
+
                 show_role_txt.setText("YOUR TURN TO LISTEN")
                 show_pass.setText("")
                 toggled_role = "listener"
+
                 logger.log_timing(
                     role_label=toggled_role,
                     wall_time=time_here,
@@ -501,9 +506,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
     session_cfg = load_config_from_args(args)
     main(
+        session_cfg=session_cfg,
         scanner=args.scanner,
         fullscr=args.fullscreen,
-        session_cfg=session_cfg,
         session=args.session,
         conflict=args.conflict,
         csv_path=args.csv,
