@@ -116,7 +116,7 @@ def main(pid: str, session: int, conflict: str, csv_path: str):
     show_end = make_text(text="You are now done with this task.")
 
     instr = (
-       f"In the last task, you discussed {conflict_text.upper()} with your partner.\n\n\n"
+        f"In the last task, you discussed {conflict_text.upper()} with your partner.\n\n\n"
         f"Next, we would like to know more about this problem. For 2 minutes,\n"
         "please say in your own words why this topic is a problem in your relationship.\n\n\n"
         "This recording is confidential. The experimenter has muted the audio, and what you say now will\n"

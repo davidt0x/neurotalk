@@ -301,7 +301,9 @@ def main(
     role_text = (
         "YOUR TURN TO SPEAK" if initial_role.is_speaker else "YOUR TURN TO LISTEN"
     )
-    pass_text = "Press trackball button to pass the mic." if initial_role.is_speaker else ""
+    pass_text = (
+        "Press trackball button to pass the mic." if initial_role.is_speaker else ""
+    )
     show_topic.setText(f"Discussion topic: {display_topic}")
 
     show_role_txt.setText(role_text)
@@ -482,7 +484,9 @@ def main(
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Neutral Conversation Task (trackball)")
+    parser = argparse.ArgumentParser(
+        description="Neutral Conversation Task (trackball)"
+    )
     parser.add_argument(
         "--session",
         "-s",

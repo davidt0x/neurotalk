@@ -60,7 +60,7 @@ KEY_PASS = "1"
 KEY_QUIT = "escape"
 KEY_TRIGGER = "space"
 TTL_KEY = "5"
-TTL_ACCEPT = {"equal", "=",TTL_KEY}
+TTL_ACCEPT = {"equal", "=", TTL_KEY}
 TRIGGER_ACCEPT = {"space", KEY_TRIGGER}
 
 CSV_FILENAME = "participant_counterbalancing.csv"
@@ -293,7 +293,9 @@ def main(
     role_text = (
         "YOUR TURN TO SPEAK" if initial_role.is_speaker else "YOUR TURN TO LISTEN"
     )
-    pass_text = "Press trackball button to pass the mic." if initial_role.is_speaker else ""
+    pass_text = (
+        "Press trackball button to pass the mic." if initial_role.is_speaker else ""
+    )
     show_topic.setText(f"Problem topic: {conflict_text}")
 
     show_role_txt.setText(role_text)
