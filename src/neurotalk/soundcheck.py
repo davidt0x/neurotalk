@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import logging
+import queue
 import sys
+import threading
 import time
 from collections.abc import Iterable
 from contextlib import AbstractContextManager
@@ -12,6 +14,9 @@ from typing import Any, cast
 
 import numpy as np
 import sounddevice as sd
+
+from neurotalk.control import DEBUG_READY, DEBUG_STOP, ControlMessageType
+from neurotalk.session import ConversationSession
 
 sf: Any | None
 try:  # optional dependency; we fall back to a generated tone if absent.
@@ -275,3 +280,380 @@ def run_volume_check(
         sample_rate_hz=sample_rate_hz,
         channels=clip.shape[1],
     )
+
+
+@dataclass(slots=True)
+class ConversationSoundcheckResult:
+    """Outcome of a conversation-based sound check."""
+
+    volume_percent: int
+    playback_gain: float
+    ui: str
+
+
+class _ConversationSoundcheckSync:
+    def __init__(
+        self,
+        *,
+        send_interval_s: float = 0.5,
+    ) -> None:
+        self.partner_joined = False
+        self.partner_done = False
+        self.local_done = False
+        self._send_interval_s = send_interval_s
+        self._last_ready_send = 0.0
+        self._last_done_send = 0.0
+
+    def poll(self, session: ConversationSession) -> None:
+        while True:
+            try:
+                msg_type, _payload = session.next_control_event(timeout=0.0)
+            except queue.Empty:
+                return
+            if msg_type is ControlMessageType.DEBUG_READY:
+                self.partner_joined = True
+            elif msg_type is ControlMessageType.DEBUG_STOP:
+                self.partner_done = True
+
+    def mark_local_done(self) -> None:
+        self.local_done = True
+
+    def tick(self, session: ConversationSession) -> None:
+        now = time.time()
+        if (
+            not self.partner_joined
+            and (now - self._last_ready_send) >= self._send_interval_s
+        ):
+            _send_control_token(session, DEBUG_READY)
+            self._last_ready_send = now
+        if self.local_done and (now - self._last_done_send) >= self._send_interval_s:
+            _send_control_token(session, DEBUG_STOP)
+            self._last_done_send = now
+
+
+def _send_control_token(session: ConversationSession, token: bytes) -> None:
+    sockets = session.state.sockets
+    if sockets is None:
+        msg = "Session not connected"
+        raise RuntimeError(msg)
+    remote_ip, _, _, port_comm = sockets.remote
+    sockets.control.sendto(token, (remote_ip, port_comm))
+
+
+def _clamp_int(value: int, lo: int, hi: int) -> int:
+    return max(lo, min(hi, int(value)))
+
+
+def _gain_from_percent(volume_percent: int) -> float:
+    return max(0.0, float(volume_percent) / 100.0)
+
+
+class _ConsoleLineReader:
+    def __init__(self) -> None:
+        self._queue: queue.Queue[str] = queue.Queue()
+        self._thread = threading.Thread(target=self._loop, daemon=True)
+        self._thread.start()
+
+    def _loop(self) -> None:
+        while True:
+            try:
+                line = sys.stdin.readline()
+            except Exception:
+                return
+            if line == "":
+                return
+            self._queue.put(line)
+
+    def poll(self) -> str | None:
+        try:
+            return self._queue.get_nowait()
+        except queue.Empty:
+            return None
+
+
+def run_conversation_soundcheck(
+    session: ConversationSession,
+    *,
+    ui: str = "auto",
+    win: Any | None = None,
+    start_volume_percent: int | None = None,
+    min_volume_percent: int = 0,
+    max_volume_percent: int = 200,
+    step_percent: int = 5,
+    restore_audio_state: bool = True,
+) -> ConversationSoundcheckResult:
+    """
+    Run a bi-directional audio sound check over an existing ConversationSession.
+
+    The default UI prints instructions to the console. When ``ui='psychopy'`` (or
+    ``ui='auto'`` with a PsychoPy window provided via ``win``), the sound check
+    uses PsychoPy to render instructions and accept mouse button input.
+    """
+
+    resolved_ui = ui.lower()
+    if resolved_ui == "auto":
+        resolved_ui = "psychopy" if win is not None else "console"
+    if resolved_ui not in ("console", "psychopy"):
+        msg = f"Unknown soundcheck ui={ui!r} (expected 'auto', 'console', or 'psychopy')"
+        raise ValueError(msg)
+
+    previous_transmit = session.state.transmit_enabled
+    previous_receive = session.state.receive_enabled
+
+    session.enable_transmit(True)
+    session.enable_receive(True)
+
+    if start_volume_percent is None:
+        start_volume_percent = round(float(session.get_playback_gain()) * 100.0)
+    volume_percent = _clamp_int(start_volume_percent, min_volume_percent, max_volume_percent)
+    session.set_playback_gain(_gain_from_percent(volume_percent))
+
+    sync = _ConversationSoundcheckSync()
+
+    try:
+        if resolved_ui == "psychopy":
+            _run_psychopy_conversation_soundcheck(
+                session,
+                win=win,
+                sync=sync,
+                volume_percent=volume_percent,
+                min_volume_percent=min_volume_percent,
+                max_volume_percent=max_volume_percent,
+                step_percent=step_percent,
+            )
+            volume_percent = round(float(session.get_playback_gain()) * 100.0)
+        else:
+            volume_percent = _run_console_conversation_soundcheck(
+                session,
+                sync=sync,
+                volume_percent=volume_percent,
+                min_volume_percent=min_volume_percent,
+                max_volume_percent=max_volume_percent,
+                step_percent=step_percent,
+            )
+    finally:
+        if restore_audio_state:
+            session.enable_transmit(previous_transmit)
+            session.enable_receive(previous_receive)
+
+    gain = float(session.get_playback_gain())
+    return ConversationSoundcheckResult(
+        volume_percent=round(gain * 100.0),
+        playback_gain=gain,
+        ui=resolved_ui,
+    )
+
+
+def _run_console_conversation_soundcheck(
+    session: ConversationSession,
+    *,
+    sync: _ConversationSoundcheckSync,
+    volume_percent: int,
+    min_volume_percent: int,
+    max_volume_percent: int,
+    step_percent: int,
+) -> int:
+    reader = _ConsoleLineReader()
+
+    logging.info(
+        "[soundcheck] Talk with your partner and adjust playback volume "
+        "to a comfortable level."
+    )
+    logging.info("[soundcheck] Controls: '+' louder, '-' quieter, Enter when ready.")
+
+    last_status: tuple[bool, bool, bool] | None = None
+    last_volume = None
+
+    while True:
+        sync.poll(session)
+        sync.tick(session)
+
+        status = (sync.partner_joined, sync.partner_done, sync.local_done)
+        if status != last_status:
+            if not sync.partner_joined:
+                logging.info("[soundcheck] Waiting for partner to join...")
+            elif not sync.partner_done and sync.local_done:
+                logging.info("[soundcheck] Waiting for partner to finish...")
+            elif sync.partner_done and not sync.local_done:
+                logging.info(
+                    "[soundcheck] Partner is ready; press Enter when you are ready too."
+                )
+            last_status = status
+
+        if volume_percent != last_volume:
+            logging.info("[soundcheck] Volume: %s%%", volume_percent)
+            last_volume = volume_percent
+
+        if sync.local_done and sync.partner_done:
+            return volume_percent
+
+        line = reader.poll()
+        if line is None:
+            time.sleep(0.05)
+            continue
+
+        cmd = line.strip().lower()
+        if cmd == "":
+            sync.mark_local_done()
+            _send_control_token(session, DEBUG_STOP)
+            continue
+        if cmd in ("q", "quit", "exit"):
+            msg = "Soundcheck aborted by user"
+            raise KeyboardInterrupt(msg)
+        if cmd.startswith("+"):
+            volume_percent = _clamp_int(
+                volume_percent + step_percent, min_volume_percent, max_volume_percent
+            )
+            session.set_playback_gain(_gain_from_percent(volume_percent))
+            continue
+        if cmd.startswith("-"):
+            volume_percent = _clamp_int(
+                volume_percent - step_percent, min_volume_percent, max_volume_percent
+            )
+            session.set_playback_gain(_gain_from_percent(volume_percent))
+            continue
+
+
+def _run_psychopy_conversation_soundcheck(  # pragma: no cover - optional dependency
+    session: ConversationSession,
+    *,
+    win: Any | None,
+    sync: _ConversationSoundcheckSync,
+    volume_percent: int,
+    min_volume_percent: int,
+    max_volume_percent: int,
+    step_percent: int,
+) -> None:
+    if win is None:
+        msg = "PsychoPy soundcheck requires a PsychoPy window via win=..."
+        raise ValueError(msg)
+
+    try:
+        from psychopy import (  # type: ignore[import-not-found]  # noqa: PLC0415
+            core,
+            event,
+            visual,
+        )
+    except Exception as exc:  # pragma: no cover - optional dependency
+        msg = "PsychoPy soundcheck requested but PsychoPy is not available."
+        raise RuntimeError(msg) from exc
+
+    instructions = visual.TextStim(
+        win,
+        text=(
+            "Sound check\n\n"
+            "Talk with your partner and adjust the volume to a comfortable listening level.\n\n"
+            "Left click: lower volume\n"
+            "Right click: increase volume\n\n"
+            "When you are done, click the button below."
+        ),
+        height=0.07,
+        wrapWidth=2,
+        color="white",
+        pos=(0, 0.55),
+    )
+    volume_text = visual.TextStim(
+        win,
+        text="",
+        height=0.07,
+        wrapWidth=2,
+        color="white",
+        pos=(0, -0.10),
+    )
+    status_text = visual.TextStim(
+        win,
+        text="",
+        height=0.06,
+        wrapWidth=2,
+        color="white",
+        pos=(0, -0.35),
+    )
+    button_rect = visual.Rect(
+        win,
+        width=0.75,
+        height=0.18,
+        pos=(0, -0.65),
+        fillColor="dimgray",
+        lineColor="white",
+    )
+    button_text = visual.TextStim(
+        win,
+        text="I'M READY",
+        height=0.07,
+        color="white",
+        pos=(0, -0.65),
+    )
+
+    mouse = event.Mouse(win=win)
+    prev_pressed = (0, 0, 0)
+
+    mouse_visible = getattr(win, "mouseVisible", False)
+    try:
+        win.mouseVisible = True
+
+        while True:
+            sync.poll(session)
+            sync.tick(session)
+
+            keys = event.getKeys()
+            if "escape" in keys:
+                msg = "Soundcheck aborted by user"
+                raise KeyboardInterrupt(msg)
+
+            if sync.local_done and sync.partner_done:
+                return
+
+            if sync.partner_done and not sync.local_done:
+                status_text.text = (
+                    "Your partner is ready.\n"
+                    "Click the button below when you are ready too."
+                )
+            elif sync.local_done and not sync.partner_done:
+                status_text.text = "Waiting for your partner to finish soundcheck..."
+            elif not sync.partner_joined:
+                status_text.text = "Waiting for your partner to join soundcheck..."
+            else:
+                status_text.text = ""
+
+            if not sync.local_done:
+                pressed = mouse.getPressed()
+                click = any(pressed) and not any(prev_pressed)
+                if click:
+                    if button_rect.contains(mouse):
+                        sync.mark_local_done()
+                        _send_control_token(session, DEBUG_STOP)
+                    else:
+                        left = bool(pressed[0])
+                        right = bool(pressed[2] if len(pressed) > 2 else pressed[1])
+                        if left:
+                            volume_percent = _clamp_int(
+                                volume_percent - step_percent,
+                                min_volume_percent,
+                                max_volume_percent,
+                            )
+                            session.set_playback_gain(
+                                _gain_from_percent(volume_percent)
+                            )
+                        elif right:
+                            volume_percent = _clamp_int(
+                                volume_percent + step_percent,
+                                min_volume_percent,
+                                max_volume_percent,
+                            )
+                            session.set_playback_gain(
+                                _gain_from_percent(volume_percent)
+                            )
+                prev_pressed = pressed
+
+            gain = session.get_playback_gain()
+            volume_text.text = f"Volume: {round(gain * 100.0)}%"
+
+            instructions.draw()
+            volume_text.draw()
+            status_text.draw()
+            button_rect.draw()
+            button_text.draw()
+            win.flip()
+            core.wait(0.01)
+    finally:
+        win.mouseVisible = mouse_visible

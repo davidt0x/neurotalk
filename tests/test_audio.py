@@ -216,6 +216,25 @@ def test_audio_output_worker_disable_playback_and_error_capture():
     assert chunk == worker._silence
 
 
+def test_audio_output_worker_applies_gain_to_playback():
+    recorder = RecordingStub()
+    config = AudioConfig(chunk_frames=128, channels=1)
+    factory = FakeStreamFactory()
+    worker = AudioOutputWorker(config, recorder=recorder, stream_factory=factory)
+    worker.set_gain(0.5)
+    worker.start()
+    assert factory.output_stream is not None
+
+    pcm = np.full((config.chunk_frames,), 1000, dtype=np.int16).tobytes()
+    packet = AudioPacket(pcm=pcm, counter=1, timestamp=time.time())
+    worker.enqueue(packet)
+    chunk = factory.output_stream.emit()
+    worker.close()
+
+    samples = np.frombuffer(chunk, dtype=np.int16)
+    assert np.all(samples == 500)
+
+
 def test_mock_stream_factory_generates_packets():
     packets: list[AudioPacket] = []
 

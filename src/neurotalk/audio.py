@@ -8,6 +8,7 @@ plumbing.
 from __future__ import annotations
 
 import logging
+import math
 import queue
 import threading
 import time
@@ -331,6 +332,7 @@ class AudioOutputWorker:
         self._thread: threading.Thread | None = None
         self._queue: queue.Queue[AudioPacket] = queue.Queue()
         self._playback_enabled = True
+        self._gain = 1.0
         self._silence = self._silence_bytes(config.chunk_frames)
         self._last_chunk = self._silence
         self._counter = 0
@@ -346,6 +348,16 @@ class AudioOutputWorker:
 
     def enable_playback(self, enabled: bool) -> None:
         self._playback_enabled = enabled
+
+    @property
+    def gain(self) -> float:
+        return self._gain
+
+    def set_gain(self, gain: float) -> None:
+        if not math.isfinite(gain) or gain < 0:
+            msg = f"gain must be a finite non-negative float, got {gain!r}"
+            raise ValueError(msg)
+        self._gain = float(gain)
 
     def enqueue(self, packet: AudioPacket) -> None:
         self._queue.put(packet)
@@ -434,7 +446,18 @@ class AudioOutputWorker:
         array = np.frombuffer(playback, dtype=np.int16).reshape(
             frame_count, self.config.channels
         )
-        out_data[:] = array
+
+        gain = self._gain
+        if gain != 1.0 and self._playback_enabled:
+            scaled = array.astype(np.float32) * gain
+            scaled = np.clip(
+                scaled,
+                np.iinfo(np.int16).min,
+                np.iinfo(np.int16).max,
+            ).astype(np.int16)
+            out_data[:] = scaled
+        else:
+            out_data[:] = array
 
     def _normalize(self, data: bytes, frames: int) -> bytes:
         expected = frames * self.config.channels * 2

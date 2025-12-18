@@ -43,6 +43,7 @@ else:  # pragma: no cover - script-mode support
 from neurotalk.config import SessionConfig
 from neurotalk.config_cli import add_config_arguments, load_config_from_args
 from neurotalk.session import ConversationSession
+from neurotalk.soundcheck import run_conversation_soundcheck
 from neurotalk.turns import TurnEventSource, TurnManager, TurnRole
 
 # ---------- config ----------
@@ -77,6 +78,7 @@ def main(
     conflict: str,
     csv_path: Path,
     mixdown: bool = True,
+    soundcheck: bool = True,
     log_level: str = "WARNING",
 ) -> None:
     if session not in (1, 2):
@@ -129,6 +131,16 @@ def main(
 
     win = create_window(scanner=scanner, size=WIN_SIZE, fullscr=fullscr)
     make_text = text_factory(win, letter_height=LETTER_H, wrap_width=WRAP_W)
+
+    if soundcheck:
+        try:
+            run_conversation_soundcheck(conv_session, ui="psychopy", win=win)
+        except KeyboardInterrupt:
+            if conv_session is not None:
+                conv_session.close()
+            logger.close()
+            win.close()
+            core.quit()
 
     show_instructions = make_text(text="")
     show_sync = make_text(text="Syncing start time with your partner...")
@@ -480,6 +492,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Produce a mixed speaker/listener WAV file (use --no-mixdown to skip)",
     )
     parser.add_argument(
+        "--soundcheck",
+        default=True,
+        action=argparse.BooleanOptionalAction,
+        help="Run a bi-directional audio soundcheck before the task (use --no-soundcheck to skip).",
+    )
+    parser.add_argument(
         "--fullscreen",
         default=True,
         action=argparse.BooleanOptionalAction,
@@ -513,5 +531,6 @@ if __name__ == "__main__":
         conflict=args.conflict,
         csv_path=args.csv,
         mixdown=args.mixdown,
+        soundcheck=args.soundcheck,
         log_level=args.log_level,
     )

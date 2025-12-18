@@ -8,6 +8,7 @@ channel, and recording hooks exposed elsewhere in the package.
 from __future__ import annotations
 
 import logging
+import math
 import queue
 import struct
 import threading
@@ -85,6 +86,7 @@ class SessionState:
     start_time_common: float | None = None
     transmit_enabled: bool = True
     receive_enabled: bool = True
+    playback_gain: float = 1.0
     input_worker: AudioInputWorker | None = None
     output_worker: AudioOutputWorker | None = None
     stream_factory: StreamFactory | None = None
@@ -391,6 +393,17 @@ class ConversationSession:
         if self.state.output_worker:
             self.state.output_worker.enable_playback(enabled)
 
+    def set_playback_gain(self, gain: float) -> None:
+        if not math.isfinite(gain) or gain < 0:
+            msg = f"gain must be a finite non-negative float, got {gain!r}"
+            raise ValueError(msg)
+        self.state.playback_gain = gain
+        if self.state.output_worker is not None:
+            self.state.output_worker.set_gain(gain)
+
+    def get_playback_gain(self) -> float:
+        return self.state.playback_gain
+
     # ---- synchronization -------------------------------------------------
     def sync_start(self, delay_seconds: float) -> float:
         """
@@ -552,6 +565,7 @@ class ConversationSession:
         output_worker = AudioOutputWorker(
             audio_cfg, recorder=remote_recorder, stream_factory=factory
         )
+        output_worker.set_gain(self.state.playback_gain)
         input_worker = AudioInputWorker(
             audio_cfg,
             self._handle_outbound_packet,
