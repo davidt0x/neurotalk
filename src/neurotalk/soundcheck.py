@@ -313,6 +313,7 @@ class _ConversationSoundcheckSync:
             if msg_type is ControlMessageType.DEBUG_READY:
                 self.partner_joined = True
             elif msg_type is ControlMessageType.DEBUG_STOP:
+                self.partner_joined = True
                 self.partner_done = True
 
     def mark_local_done(self) -> None:
@@ -378,7 +379,7 @@ def run_conversation_soundcheck(
     win: Any | None = None,
     start_volume_percent: int | None = None,
     min_volume_percent: int = 0,
-    max_volume_percent: int = 200,
+    max_volume_percent: int = 500,
     step_percent: int = 5,
     restore_audio_state: bool = True,
 ) -> ConversationSoundcheckResult:
@@ -463,7 +464,11 @@ def _run_console_conversation_soundcheck(
         "[soundcheck] Talk with your partner and adjust playback volume "
         "to a comfortable level."
     )
-    logging.info("[soundcheck] Controls: '+' louder, '-' quieter, Enter when ready.")
+    logging.info(
+        "[soundcheck] Controls: '+' louder, '-' quieter, Enter when ready "
+        "(max 500%%)."
+    )
+    logging.info("[soundcheck] Ctrl+C to abort.")
 
     last_status: tuple[bool, bool, bool] | None = None
     last_volume = None
@@ -629,24 +634,21 @@ def _run_psychopy_conversation_soundcheck(  # pragma: no cover - optional depend
                     else:
                         left = bool(pressed[0])
                         right = bool(pressed[2] if len(pressed) > 2 else pressed[1])
-                        if left:
-                            volume_percent = _clamp_int(
-                                volume_percent - step_percent,
-                                min_volume_percent,
-                                max_volume_percent,
-                            )
-                            session.set_playback_gain(
-                                _gain_from_percent(volume_percent)
-                            )
-                        elif right:
+                        x_pos, _y_pos = mouse.getPos()
+                        wants_increase = right or (left and x_pos >= 0)
+                        if wants_increase:
                             volume_percent = _clamp_int(
                                 volume_percent + step_percent,
                                 min_volume_percent,
                                 max_volume_percent,
                             )
-                            session.set_playback_gain(
-                                _gain_from_percent(volume_percent)
+                        else:
+                            volume_percent = _clamp_int(
+                                volume_percent - step_percent,
+                                min_volume_percent,
+                                max_volume_percent,
                             )
+                        session.set_playback_gain(_gain_from_percent(volume_percent))
                 prev_pressed = pressed
 
             gain = session.get_playback_gain()
