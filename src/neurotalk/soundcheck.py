@@ -394,7 +394,9 @@ def run_conversation_soundcheck(
     if resolved_ui == "auto":
         resolved_ui = "psychopy" if win is not None else "console"
     if resolved_ui not in ("console", "psychopy"):
-        msg = f"Unknown soundcheck ui={ui!r} (expected 'auto', 'console', or 'psychopy')"
+        msg = (
+            f"Unknown soundcheck ui={ui!r} (expected 'auto', 'console', or 'psychopy')"
+        )
         raise ValueError(msg)
 
     previous_transmit = session.state.transmit_enabled
@@ -405,7 +407,9 @@ def run_conversation_soundcheck(
 
     if start_volume_percent is None:
         start_volume_percent = round(float(session.get_playback_gain()) * 100.0)
-    volume_percent = _clamp_int(start_volume_percent, min_volume_percent, max_volume_percent)
+    volume_percent = _clamp_int(
+        start_volume_percent, min_volume_percent, max_volume_percent
+    )
     session.set_playback_gain(_gain_from_percent(volume_percent))
 
     sync = _ConversationSoundcheckSync()
