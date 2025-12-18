@@ -551,8 +551,7 @@ def _run_psychopy_conversation_soundcheck(  # pragma: no cover - optional depend
         text=(
             "Sound check\n\n"
             "Talk with your partner and adjust the volume to a comfortable listening level.\n\n"
-            "Left click: lower volume\n"
-            "Right click: increase volume\n\n"
+            "Use the - and + buttons or click the slider to set volume (left click only).\n\n"
             "When you are done, click the button below."
         ),
         height=0.07,
@@ -576,6 +575,52 @@ def _run_psychopy_conversation_soundcheck(  # pragma: no cover - optional depend
         color="white",
         pos=(0, -0.35),
     )
+    slider_track = visual.Rect(
+        win,
+        width=1.6,
+        height=0.06,
+        pos=(0, -0.10),
+        fillColor="dimgray",
+        lineColor="white",
+    )
+    slider_knob = visual.Rect(
+        win,
+        width=0.08,
+        height=0.14,
+        pos=(0, -0.10),
+        fillColor="white",
+        lineColor="black",
+    )
+    minus_rect = visual.Rect(
+        win,
+        width=0.18,
+        height=0.14,
+        pos=(-0.95, -0.10),
+        fillColor="dimgray",
+        lineColor="white",
+    )
+    minus_text = visual.TextStim(
+        win,
+        text="-",
+        height=0.10,
+        color="white",
+        pos=(-0.95, -0.10),
+    )
+    plus_rect = visual.Rect(
+        win,
+        width=0.18,
+        height=0.14,
+        pos=(0.95, -0.10),
+        fillColor="dimgray",
+        lineColor="white",
+    )
+    plus_text = visual.TextStim(
+        win,
+        text="+",
+        height=0.10,
+        color="white",
+        pos=(0.95, -0.10),
+    )
     button_rect = visual.Rect(
         win,
         width=0.75,
@@ -598,6 +643,15 @@ def _run_psychopy_conversation_soundcheck(  # pragma: no cover - optional depend
     mouse_visible = getattr(win, "mouseVisible", False)
     try:
         win.mouseVisible = True
+
+        def _update_slider_from_volume() -> None:
+            ratio = (volume_percent - min_volume_percent) / float(
+                max_volume_percent - min_volume_percent
+            )
+            ratio = max(0.0, min(1.0, ratio))
+            left_edge = slider_track.pos[0] - (slider_track.width / 2)
+            x_pos = left_edge + ratio * slider_track.width
+            slider_knob.pos = (x_pos, slider_track.pos[1])
 
         while True:
             sync.poll(session)
@@ -627,35 +681,60 @@ def _run_psychopy_conversation_soundcheck(  # pragma: no cover - optional depend
                 pressed = mouse.getPressed()
                 click = any(pressed) and not any(prev_pressed)
                 if click:
+                    left = bool(pressed[0])
+                    if not left:
+                        prev_pressed = pressed
+                        continue
+
                     if button_rect.contains(mouse):
                         sync.mark_local_done()
                         _send_control_token(session, DEBUG_STOP)
-                    else:
-                        left = bool(pressed[0])
-                        right = bool(pressed[2] if len(pressed) > 2 else pressed[1])
-                        x_pos, _y_pos = mouse.getPos()
-                        wants_increase = right or (left and x_pos >= 0)
-                        if wants_increase:
-                            volume_percent = _clamp_int(
-                                volume_percent + step_percent,
-                                min_volume_percent,
-                                max_volume_percent,
-                            )
-                        else:
-                            volume_percent = _clamp_int(
-                                volume_percent - step_percent,
-                                min_volume_percent,
-                                max_volume_percent,
-                            )
+                    elif plus_rect.contains(mouse):
+                        volume_percent = _clamp_int(
+                            volume_percent + step_percent,
+                            min_volume_percent,
+                            max_volume_percent,
+                        )
                         session.set_playback_gain(_gain_from_percent(volume_percent))
+                    elif minus_rect.contains(mouse):
+                        volume_percent = _clamp_int(
+                            volume_percent - step_percent,
+                            min_volume_percent,
+                            max_volume_percent,
+                        )
+                        session.set_playback_gain(_gain_from_percent(volume_percent))
+                    elif slider_track.contains(mouse):
+                        x_here, _y_here = mouse.getPos()
+                        left_edge = slider_track.pos[0] - (slider_track.width / 2)
+                        ratio = (x_here - left_edge) / slider_track.width
+                        ratio = max(0.0, min(1.0, ratio))
+                        volume_percent = _clamp_int(
+                            round(
+                                min_volume_percent
+                                + ratio * (max_volume_percent - min_volume_percent)
+                            ),
+                            min_volume_percent,
+                            max_volume_percent,
+                        )
+                        session.set_playback_gain(_gain_from_percent(volume_percent))
+                    else:
+                        # Ignore clicks elsewhere to avoid accidental trackpad gestures.
+                        pass
                 prev_pressed = pressed
 
             gain = session.get_playback_gain()
             volume_text.text = f"Volume: {round(gain * 100.0)}%"
+            _update_slider_from_volume()
 
             instructions.draw()
             volume_text.draw()
             status_text.draw()
+            slider_track.draw()
+            slider_knob.draw()
+            minus_rect.draw()
+            minus_text.draw()
+            plus_rect.draw()
+            plus_text.draw()
             button_rect.draw()
             button_text.draw()
             win.flip()
