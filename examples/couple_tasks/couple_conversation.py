@@ -72,6 +72,7 @@ def main(
     *,
     session_cfg: SessionConfig,
     scanner: str | None = SCANNER,
+    fullscr: bool = True,
     session: int,
     conflict: str,
     csv_path: Path,
@@ -128,7 +129,7 @@ def main(
     level_value = getattr(logging, level_name, logging.WARNING)
     logging.console.setLevel(level_value)
 
-    win = create_window(scanner=scanner, size=WIN_SIZE, fullscr=FULLSCR)
+    win = create_window(scanner=scanner, size=WIN_SIZE, fullscr=fullscr)
     make_text = text_factory(win, letter_height=LETTER_H, wrap_width=WRAP_W)
 
     show_instructions = make_text(text="")
@@ -474,6 +475,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Produce a mixed speaker/listener WAV file (use --no-mixdown to skip)",
     )
     parser.add_argument(
+        "--fullscreen",
+        default=True,
+        action=argparse.BooleanOptionalAction,
+        help="Run in fullscreen mode (use --no-fullscreen for windowed).",
+    )
+    parser.add_argument(
         "--scanner",
         choices=["skyra", "prisma"],
         default=None,
@@ -495,6 +502,7 @@ if __name__ == "__main__":
     session_cfg = load_config_from_args(args)
     main(
         scanner=args.scanner,
+        fullscr=args.fullscreen,
         session_cfg=session_cfg,
         session=args.session,
         conflict=args.conflict,

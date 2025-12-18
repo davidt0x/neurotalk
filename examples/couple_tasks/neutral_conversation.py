@@ -38,7 +38,7 @@ from neurotalk.turns import TurnEventSource, TurnManager, TurnRole
 # ---------- config ----------
 SCANNER = None
 WIN_SIZE = (1280, 800)
-FULLSCR = False
+FULLSCR = True
 LETTER_H = 0.07
 WRAP_W = 2
 
@@ -68,6 +68,7 @@ def canonical_topic(topic: str) -> str:
 def main(
     *,
     session_cfg: SessionConfig,
+    fullscr: bool = True,
     session: int,
     csv_path: Path,
     mixdown: bool,
@@ -161,7 +162,7 @@ def main(
     level_name = log_level.upper()
     logging.console.setLevel(getattr(logging, level_name, logging.WARNING))
 
-    win = create_window(scanner=SCANNER, size=WIN_SIZE, fullscr=FULLSCR)
+    win = create_window(scanner=SCANNER, size=WIN_SIZE, fullscr=fullscr)
     make_text = text_factory(win, letter_height=LETTER_H, wrap_width=WRAP_W)
 
     show_instructions = make_text(text="")
@@ -470,6 +471,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Produce a mixed speaker/listener WAV file (use --no-mixdown to skip)",
     )
     parser.add_argument(
+        "--fullscreen",
+        default=True,
+        action=argparse.BooleanOptionalAction,
+        help="Run in fullscreen mode (use --no-fullscreen for windowed).",
+    )
+    parser.add_argument(
         "--log-level",
         type=str,
         default="WARNING",
@@ -485,6 +492,7 @@ if __name__ == "__main__":
     session_cfg = load_config_from_args(args)
     main(
         session_cfg=session_cfg,
+        fullscr=args.fullscreen,
         session=args.session,
         csv_path=args.csv,
         mixdown=args.mixdown,
