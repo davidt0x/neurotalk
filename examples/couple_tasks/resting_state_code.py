@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 """
 Resting-state (eyes-open) task
 - Waits for TTL trigger ('=' or 'equal') using event.getKeys()
