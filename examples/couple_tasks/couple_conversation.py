@@ -54,7 +54,7 @@ WIN_SIZE = (1280, 800)
 FULLSCR = True
 LETTER_H = 0.07
 WRAP_W = 2
-RECORDING_LABEL = "couple_conversation_trackball"
+RECORDING_LABEL = "couple_conversation"
 
 INSTR_BLANK_S = 10.0  # blank after instruction/trigger, before conversation UI
 COMM_S = 600.0

@@ -49,7 +49,7 @@ WRAP_W = 2
 INTRO_S = 10.0  # intro dwell before communication
 COMM_S = 600.0  # communication phase duration (s)
 SYNC_START_LAG = 12.0  # lead-in before instructions to sync timing
-RECORDING_LABEL = "neutral_conversation_trackball"
+RECORDING_LABEL = "neutral_conversation"
 
 KEY_PASS = "1"
 KEY_QUIT = "escape"
