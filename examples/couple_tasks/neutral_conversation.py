@@ -12,6 +12,7 @@ if __package__:
     from .utils import (
         create_window,
         decode_pid,
+        finalize_and_quit,
         load_assignment_row,
         pick_first_speaker,
         slug,
@@ -25,6 +26,7 @@ else:  # pragma: no cover - script-mode support
     from couple_tasks.utils import (  # type: ignore[import-not-found]
         create_window,
         decode_pid,
+        finalize_and_quit,
         load_assignment_row,
         pick_first_speaker,
         slug,
@@ -174,12 +176,8 @@ def main(
         try:
             run_conversation_soundcheck(conv_session, ui="psychopy", win=win)
         except KeyboardInterrupt:
-            if conv_session is not None:
-                conv_session.close()
-                conv_session = None
-            logger.close()
-            win.close()
-            core.quit()
+            finalize_and_quit(conv_session, recording_dir, logger, mixdown, win)
+            return
 
     show_instructions = make_text(text="")
     show_sync = make_text(text="Syncing start time with your partner...")
@@ -200,12 +198,8 @@ def main(
             break
         keys = event.getKeys([KEY_QUIT])
         if KEY_QUIT in keys:
-            if conv_session is not None:
-                conv_session.close()
-                conv_session = None
-            logger.close()
-            win.close()
-            core.quit()
+            finalize_and_quit(conv_session, recording_dir, logger, mixdown, win)
+            return
         win.flip()
         core.wait(0.01)
     show_sync.setAutoDraw(False)
@@ -221,12 +215,8 @@ def main(
         win.flip()
         keys = event.getKeys()
         if KEY_QUIT in keys:
-            if conv_session is not None:
-                conv_session.close()
-                conv_session = None
-            logger.close()
-            win.close()
-            core.quit()
+            finalize_and_quit(conv_session, recording_dir, logger, mixdown, win)
+            return
         if any(k in TTL_ACCEPT for k in keys):
             trigger_source = "ttl"
             break
@@ -259,12 +249,8 @@ def main(
         keys = event.getKeys([TTL_KEY, KEY_QUIT])
         if keys:
             if KEY_QUIT in keys:
-                if conv_session is not None:
-                    conv_session.close()
-                    conv_session = None
-                logger.close()
-                win.close()
-                core.quit()
+                finalize_and_quit(conv_session, recording_dir, logger, mixdown, win)
+                return
             if TTL_KEY in keys:
                 logger.log_ttl(
                     role_label="",
@@ -283,12 +269,8 @@ def main(
             keys = event.getKeys([TTL_KEY, KEY_QUIT])
             if keys:
                 if KEY_QUIT in keys:
-                    if conv_session is not None:
-                        conv_session.close()
-                        conv_session = None
-                    logger.close()
-                    win.close()
-                    core.quit()
+                    finalize_and_quit(conv_session, recording_dir, logger, mixdown, win)
+                    return
                 if TTL_KEY in keys:
                     logger.log_ttl(
                         role_label="",
@@ -383,14 +365,10 @@ def main(
         if keys:
             key, _rt = keys[-1]
             if key == KEY_QUIT:
-                if conv_session is not None:
-                    conv_session.close()
-                    conv_session = None
-                logger.close()
-                win.close()
-                core.quit()
+                finalize_and_quit(conv_session, recording_dir, logger, mixdown, win)
+                return
 
-            elif key == KEY_PASS:
+            if key == KEY_PASS:
                 # Only speakers can pass
                 if not turn_manager.is_speaker:
                     # ignore if listener presses the trackball
@@ -452,24 +430,7 @@ def main(
     win.flip()
     core.wait(1.0)
 
-    if conv_session is not None:
-        conv_session.close()
-        try:
-            export_dir = recording_dir / "segments"
-            conv_session.export_segments(export_dir)
-        except Exception as exc:
-            logging.error("Failed to export segments: %s", exc)
-        if mixdown:
-            try:
-                mix_track_path = conv_session.export_mix_track()
-                if mix_track_path:
-                    logging.info("Mixed audio written to %s", mix_track_path)
-            except Exception as exc:
-                logging.error("Failed to generate mix track: %s", exc)
-
-    logger.save_and_close()
-    win.close()
-    core.quit()
+    finalize_and_quit(conv_session, recording_dir, logger, mixdown, win)
 
 
 def _build_parser() -> argparse.ArgumentParser:

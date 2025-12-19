@@ -5,7 +5,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from psychopy import monitors, visual  # type: ignore[import-not-found]
+from psychopy import core, logging, monitors, visual  # type: ignore[import-not-found]
 
 
 @dataclass(frozen=True)
@@ -26,6 +26,38 @@ class AssignmentRow:
             "Neutral_session_2": self.neutral_session_2,
             "Couple_session_2": self.couple_session_2,
         }
+
+
+def finalize_and_quit(
+    conv_session,
+    recording_dir: Path,
+    logger,
+    mixdown: bool,
+    win,
+) -> None:
+    """
+    Ensure audio artifacts and logs are flushed before exiting early.
+    """
+
+    try:
+        if conv_session is not None:
+            conv_session.close()
+            try:
+                export_dir = recording_dir / "segments"
+                conv_session.export_segments(export_dir)
+            except Exception as exc:  # pragma: no cover - best-effort shutdown
+                logging.error("Failed to export segments: %s", exc)
+            if mixdown:
+                try:
+                    mix_path = conv_session.export_mix_track()
+                    if mix_path:
+                        logging.info("Mixed audio written to %s", mix_path)
+                except Exception as exc:  # pragma: no cover - best-effort shutdown
+                    logging.error("Failed to generate mix track: %s", exc)
+    finally:
+        logger.save_and_close()
+        win.close()
+        core.quit()
 
 
 def decode_pid(pid_str: str) -> tuple[int, str]:
