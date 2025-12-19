@@ -17,7 +17,7 @@ class _DummySocket:
 
     def sendto(self, data: bytes, addr: object) -> None:
         # no-op sink for outbound packets
-        self.last_sent = (data, addr)  # type: ignore[attr-defined]
+        self.last_sent = (data, addr)
 
     def close(self) -> None:
         self.closed = True
@@ -42,6 +42,8 @@ def test_recording_label_used_in_output_names(tmp_path):
 
     session = ConversationSession(cfg, recording_label="My Task Label")
     local_recorder, remote_recorder = session._create_recorders()
+    assert local_recorder is not None
+    assert remote_recorder is not None
     try:
         assert "123_A_My_Task_Label_" in local_recorder.path.name
         assert local_recorder.path.name.endswith("_local.wav")
@@ -59,18 +61,22 @@ def test_recording_toggle_propagates_to_workers(tmp_path):
     session = ConversationSession(
         cfg, recording_enabled=False, stream_factory=MockStreamFactory()
     )
-    session.state.sockets = _DummyBundle()
+    session.state.sockets = _DummyBundle()  # type: ignore[assignment]
     session._initialize_audio()
     try:
         input_worker = session.state.input_worker
         output_worker = session.state.output_worker
         assert input_worker is not None
         assert output_worker is not None
-        assert not input_worker._recording_enabled  # type: ignore[attr-defined]
-        assert not output_worker._recording_enabled  # type: ignore[attr-defined]
+        assert not input_worker._recording_enabled
+        assert not output_worker._recording_enabled
 
         session.enable_recording(True)
-        assert input_worker._recording_enabled  # type: ignore[attr-defined]
-        assert output_worker._recording_enabled  # type: ignore[attr-defined]
+        refreshed_output = session.state.output_worker
+        refreshed_input = session.state.input_worker
+        assert refreshed_input is not None
+        assert refreshed_output is not None
+        assert refreshed_input._recording_enabled
+        assert refreshed_output._recording_enabled
     finally:
         session._shutdown_audio()
