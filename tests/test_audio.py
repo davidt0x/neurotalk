@@ -167,6 +167,25 @@ def test_audio_input_worker_respects_transmit_toggle():
     assert packets == []
 
 
+def test_audio_input_worker_respects_recording_toggle():
+    """Disabling recording should leave transmit intact but skip writes."""
+    packets: list[AudioPacket] = []
+    recorder = RecordingStub()
+
+    def on_packet(packet: AudioPacket) -> None:
+        packets.append(packet)
+
+    worker = AudioInputWorker(
+        AudioConfig(), on_packet, recorder=recorder, stream_factory=FakeStreamFactory()
+    )
+    worker.enable_recording(False)
+    array = np.frombuffer(b"\x02\x00", dtype=np.int16).reshape(1, 1)
+    worker._callback(array, 1, None, 0)
+
+    assert len(packets) == 1
+    assert recorder.packets == []
+
+
 def test_audio_input_worker_records_errors():
     """Recorder failures bubble into `last_error` and trigger abort flags."""
     worker = AudioInputWorker(
@@ -196,6 +215,24 @@ def test_audio_output_worker_playback_and_recording():
     assert chunk == packet.pcm
     assert len(recorder.packets) == 1
     assert recorder.packets[0].pcm == chunk
+
+
+def test_audio_output_worker_respects_recording_toggle():
+    """Disabling recording should still play audio but skip recorder writes."""
+    recorder = RecordingStub()
+    factory = FakeStreamFactory()
+    worker = AudioOutputWorker(AudioConfig(), recorder=recorder, stream_factory=factory)
+    worker.enable_recording(False)
+    worker.start()
+    assert factory.output_stream is not None
+
+    packet = make_packet_with_size(worker)
+    worker.enqueue(packet)
+    chunk = factory.output_stream.emit()
+    worker.close()
+
+    assert chunk == packet.pcm
+    assert recorder.packets == []
 
 
 def test_audio_output_worker_disable_playback_and_error_capture():

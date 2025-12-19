@@ -52,6 +52,7 @@ WIN_SIZE = (1280, 800)
 FULLSCR = True
 LETTER_H = 0.07
 WRAP_W = 2
+RECORDING_LABEL = "couple_conversation"
 
 INSTR_BLANK_S = 10.0  # blank after instruction/trigger, before conversation UI
 COMM_S = 600.0
@@ -107,7 +108,9 @@ def main(
     recording_dir = cfg.recording.directory
     recording_dir.mkdir(parents=True, exist_ok=True)
 
-    conv_session: ConversationSession | None = ConversationSession(cfg)
+    conv_session: ConversationSession | None = ConversationSession(
+        cfg, recording_enabled=False, recording_label=RECORDING_LABEL
+    )
     turn_manager = TurnManager(conv_session)
     conv_session.connect()
     conv_session.enable_transmit(False)
@@ -288,10 +291,14 @@ def main(
 
     show_blank.setAutoDraw(False)
 
+    comm_clock = core.Clock()
+    if conv_session is not None:
+        conv_session.enable_recording(True)
+
     logger.log_timing(
         role_label="Communication_start",
         run_clock=run_clock,
-        phase_clock=None,
+        phase_clock=comm_clock,
     )
 
     initial_role = TurnRole.SPEAKER if role == first_speaker else TurnRole.LISTENER
@@ -308,7 +315,6 @@ def main(
     show_timer.setAutoDraw(True)
     show_topic.setAutoDraw(True)
 
-    comm_clock = core.Clock()
     turn_manager.start(initial_role)
 
     logger.experiment.addData("dyad", dyad)

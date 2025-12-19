@@ -78,6 +78,16 @@ def _ensure_logging_configured(default_level: int = logging.INFO) -> None:
         )
 
 
+def _normalize_label(label: str | None) -> str | None:
+    if label is None:
+        return None
+    cleaned = label.strip().replace(" ", "_")
+    sanitized = "".join(
+        ch if ch.isalnum() or ch in "-._" else "_" for ch in cleaned
+    ).strip("_-.")
+    return sanitized or None
+
+
 @dataclass
 class SessionState:
     """Mutable state tracked across the lifetime of a session."""
@@ -119,6 +129,8 @@ class ConversationSession:
         config: SessionConfig,
         *,
         control_handler: ControlHandler | None = None,
+        recording_enabled: bool = True,
+        recording_label: str | None = None,
         stream_factory: StreamFactory | None = None,
     ):
         self.config = config
@@ -130,6 +142,8 @@ class ConversationSession:
             queue.Queue()
         )
         self._stream_factory_override = stream_factory
+        self._recording_enabled = recording_enabled
+        self._recording_label = _normalize_label(recording_label)
 
     # ---- context manager -------------------------------------------------
     def __enter__(self) -> ConversationSession:
@@ -393,6 +407,13 @@ class ConversationSession:
         if self.state.output_worker:
             self.state.output_worker.enable_playback(enabled)
 
+    def enable_recording(self, enabled: bool) -> None:
+        self._recording_enabled = enabled
+        if self.state.input_worker:
+            self.state.input_worker.enable_recording(enabled)
+        if self.state.output_worker:
+            self.state.output_worker.enable_recording(enabled)
+
     def set_playback_gain(self, gain: float) -> None:
         if not math.isfinite(gain) or gain < 0:
             msg = f"gain must be a finite non-negative float, got {gain!r}"
@@ -575,6 +596,8 @@ class ConversationSession:
 
         output_worker.enable_playback(self.state.receive_enabled)
         input_worker.enable_transmit(self.state.transmit_enabled)
+        output_worker.enable_recording(self._recording_enabled)
+        input_worker.enable_recording(self._recording_enabled)
 
         output_worker.start()
         input_worker.start()
@@ -695,7 +718,11 @@ class ConversationSession:
         directory.mkdir(parents=True, exist_ok=True)
 
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        base_name = f"{self.config.participant_id}_{self.config.role}_{timestamp}"
+        base_parts = [self.config.participant_id, self.config.role]
+        if self._recording_label:
+            base_parts.append(self._recording_label)
+        base_parts.append(timestamp)
+        base_name = "_".join(base_parts)
 
         audio_cfg = self.config.audio
 

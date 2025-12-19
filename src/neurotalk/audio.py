@@ -232,6 +232,7 @@ class AudioInputWorker:
         self._thread: threading.Thread | None = None
         self._running = threading.Event()
         self._transmit_enabled = True
+        self._recording_enabled = True
         self._counter = 0
         self._last_error: Exception | None = None
 
@@ -241,6 +242,9 @@ class AudioInputWorker:
 
     def enable_transmit(self, enabled: bool) -> None:
         self._transmit_enabled = enabled
+
+    def enable_recording(self, enabled: bool) -> None:
+        self._recording_enabled = enabled
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -296,7 +300,7 @@ class AudioInputWorker:
         self._counter += 1
         packet = AudioPacket(pcm=pcm, counter=self._counter, timestamp=time.time())
         try:
-            if self._recorder:
+            if self._recorder and self._recording_enabled:
                 self._recorder.write(packet)
             if self._transmit_enabled:
                 self._on_packet(packet)
@@ -332,6 +336,7 @@ class AudioOutputWorker:
         self._thread: threading.Thread | None = None
         self._queue: queue.Queue[AudioPacket] = queue.Queue()
         self._playback_enabled = True
+        self._recording_enabled = True
         self._gain = 1.0
         self._silence = self._silence_bytes(config.chunk_frames)
         self._last_chunk = self._silence
@@ -361,6 +366,9 @@ class AudioOutputWorker:
 
     def enqueue(self, packet: AudioPacket) -> None:
         self._queue.put(packet)
+
+    def enable_recording(self, enabled: bool) -> None:
+        self._recording_enabled = enabled
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -428,7 +436,7 @@ class AudioOutputWorker:
         self._last_chunk = payload
         self._counter += 1
 
-        if self._recorder:
+        if self._recorder and self._recording_enabled:
             record_packet = AudioPacket(
                 pcm=payload, counter=self._counter, timestamp=timestamp
             )

@@ -46,6 +46,7 @@ WRAP_W = 2
 INTRO_S = 10.0  # intro dwell before communication
 COMM_S = 600.0  # communication phase duration (s)
 SYNC_START_LAG = 12.0  # lead-in before instructions to sync timing
+RECORDING_LABEL = "neutral_conversation"
 
 KEY_PASS = "1"
 KEY_QUIT = "escape"
@@ -143,7 +144,9 @@ def main(
     recording_dir = cfg.recording.directory
     recording_dir.mkdir(parents=True, exist_ok=True)
 
-    conv_session: ConversationSession | None = ConversationSession(cfg)
+    conv_session: ConversationSession | None = ConversationSession(
+        cfg, recording_enabled=False, recording_label=RECORDING_LABEL
+    )
     turn_manager = TurnManager(conv_session)
     conv_session.connect()
     conv_session.enable_transmit(False)
@@ -296,10 +299,14 @@ def main(
                     event.clearEvents(eventType="keyboard")
             core.wait(0.01)
 
+    comm_clock = core.Clock()
+    if conv_session is not None:
+        conv_session.enable_recording(True)
+
     logger.log_timing(
         role_label="Communication_start",
         run_clock=run_clock,
-        phase_clock=None,
+        phase_clock=comm_clock,
     )
 
     initial_role = TurnRole.SPEAKER if role == first_speaker else TurnRole.LISTENER
@@ -316,7 +323,6 @@ def main(
     show_pass.setAutoDraw(True)
     show_topic.setAutoDraw(True)
 
-    comm_clock = core.Clock()
     turn_manager.start(initial_role)
 
     current_role = "speaker" if initial_role.is_speaker else "listener"
