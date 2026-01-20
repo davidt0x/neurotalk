@@ -558,6 +558,7 @@ def _run_psychopy_conversation_soundcheck(  # pragma: no cover - optional depend
         wrapWidth=2,
         color="white",
         pos=(0, 0.55),
+        autoLog=False,
     )
     volume_text = visual.TextStim(
         win,
@@ -566,6 +567,7 @@ def _run_psychopy_conversation_soundcheck(  # pragma: no cover - optional depend
         wrapWidth=2,
         color="white",
         pos=(0, -0.10),
+        autoLog=False,
     )
     status_text = visual.TextStim(
         win,
@@ -574,6 +576,7 @@ def _run_psychopy_conversation_soundcheck(  # pragma: no cover - optional depend
         wrapWidth=2,
         color="white",
         pos=(0, -0.35),
+        autoLog=False,
     )
     slider_track = visual.Rect(
         win,
@@ -582,6 +585,7 @@ def _run_psychopy_conversation_soundcheck(  # pragma: no cover - optional depend
         pos=(0, -0.10),
         fillColor="dimgray",
         lineColor="white",
+        autoLog=False,
     )
     slider_knob = visual.Rect(
         win,
@@ -590,6 +594,7 @@ def _run_psychopy_conversation_soundcheck(  # pragma: no cover - optional depend
         pos=(0, -0.10),
         fillColor="white",
         lineColor="black",
+        autoLog=False,
     )
     minus_rect = visual.Rect(
         win,
@@ -598,6 +603,7 @@ def _run_psychopy_conversation_soundcheck(  # pragma: no cover - optional depend
         pos=(-0.95, -0.10),
         fillColor="dimgray",
         lineColor="white",
+        autoLog=False,
     )
     minus_text = visual.TextStim(
         win,
@@ -605,6 +611,7 @@ def _run_psychopy_conversation_soundcheck(  # pragma: no cover - optional depend
         height=0.10,
         color="white",
         pos=(-0.95, -0.10),
+        autoLog=False,
     )
     plus_rect = visual.Rect(
         win,
@@ -613,6 +620,7 @@ def _run_psychopy_conversation_soundcheck(  # pragma: no cover - optional depend
         pos=(0.95, -0.10),
         fillColor="dimgray",
         lineColor="white",
+        autoLog=False,
     )
     plus_text = visual.TextStim(
         win,
@@ -620,6 +628,7 @@ def _run_psychopy_conversation_soundcheck(  # pragma: no cover - optional depend
         height=0.10,
         color="white",
         pos=(0.95, -0.10),
+        autoLog=False,
     )
     button_rect = visual.Rect(
         win,
@@ -628,6 +637,7 @@ def _run_psychopy_conversation_soundcheck(  # pragma: no cover - optional depend
         pos=(0, -0.65),
         fillColor="dimgray",
         lineColor="white",
+        autoLog=False,
     )
     button_text = visual.TextStim(
         win,
@@ -635,6 +645,7 @@ def _run_psychopy_conversation_soundcheck(  # pragma: no cover - optional depend
         height=0.07,
         color="white",
         pos=(0, -0.65),
+        autoLog=False,
     )
 
     mouse = event.Mouse(win=win)
