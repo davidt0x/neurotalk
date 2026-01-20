@@ -40,6 +40,7 @@ def test_from_dict_explicit(tmp_path: Path) -> None:
     assert cfg.role == "A"
     assert cfg.debug is True
     assert cfg.metadata == {"task": "demo"}
+    assert cfg.audio.playback_gain == 1.0
     assert cfg.network == NetworkConfig(
         local_ports=(1, 2, 3),
         remote_hint=("10.0.0.1", 4, 5, 6),
@@ -73,6 +74,7 @@ def test_defaults_and_yaml_roundtrip(
     assert loaded.participant_id == "participant"
     assert loaded.role == "role"
     assert loaded.audio.sample_rate_hz == 16_000
+    assert loaded.audio.playback_gain == 1.0
 
     roundtrip = SessionConfig.from_dict(loaded.to_dict())
     assert roundtrip == loaded

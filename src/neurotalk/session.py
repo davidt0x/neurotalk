@@ -144,6 +144,11 @@ class ConversationSession:
         self._stream_factory_override = stream_factory
         self._recording_enabled = recording_enabled
         self._recording_label = _normalize_label(recording_label)
+        try:
+            self.state.playback_gain = float(self.config.audio.playback_gain)
+        except Exception:
+            # Fallback for older configs without the field.
+            self.state.playback_gain = 1.0
 
     # ---- context manager -------------------------------------------------
     def __enter__(self) -> ConversationSession:
@@ -418,6 +423,7 @@ class ConversationSession:
         if not math.isfinite(gain) or gain < 0:
             msg = f"gain must be a finite non-negative float, got {gain!r}"
             raise ValueError(msg)
+        logger.info("Setting playback gain to %.3f", gain)
         self.state.playback_gain = gain
         if self.state.output_worker is not None:
             self.state.output_worker.set_gain(gain)

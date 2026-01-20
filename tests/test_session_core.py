@@ -7,7 +7,7 @@ import time
 
 import pytest
 
-from neurotalk.config import NetworkConfig, SessionConfig
+from neurotalk.config import AudioConfig, NetworkConfig, SessionConfig
 from neurotalk.control import SYNC_REQUEST, SyncTimestamp
 from neurotalk.network import SocketBundle
 from neurotalk.session import ConversationSession
@@ -132,3 +132,9 @@ def test_control_loop_auto_sync_response():
         outbound_local.close()
 
     assert len(data) == 8  # serialized SyncTimestamp
+
+
+def test_session_uses_configured_playback_gain():
+    cfg = SessionConfig(audio=AudioConfig(playback_gain=1.25))
+    session = ConversationSession(cfg)
+    assert session.state.playback_gain == pytest.approx(1.25)

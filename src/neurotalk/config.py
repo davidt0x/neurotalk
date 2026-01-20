@@ -101,6 +101,7 @@ class AudioConfig:
     buffer_chunks: int = 4
     format_tag: int = 8  # matches pyaudio.paInt16
     mock_devices: bool = False
+    playback_gain: float = 1.0
 
     def __post_init__(self) -> None:
         chunk = self.chunk_frames
@@ -112,6 +113,9 @@ class AudioConfig:
             raise ValueError(msg)
         if not (1 <= self.buffer_chunks <= 25):
             msg = "buffer_chunks must be between 1 and 25"
+            raise ValueError(msg)
+        if self.playback_gain < 0.0:
+            msg = "playback_gain must be non-negative"
             raise ValueError(msg)
 
     @classmethod

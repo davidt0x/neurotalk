@@ -68,6 +68,11 @@ def add_config_arguments(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Use mock audio backend (no real I/O).",
     )
+    parser.add_argument(
+        "--playback-gain",
+        type=float,
+        help="Playback gain multiplier (typically set by soundcheck).",
+    )
 
     # Recording overrides
     parser.add_argument("--recording-dir", type=Path, help="Recording base directory.")
@@ -138,6 +143,7 @@ def load_config_from_args(args: argparse.Namespace) -> SessionConfig:
         "chunk_frames",
         "buffer_chunks",
         "format_tag",
+        "playback_gain",
     ):
         value = getattr(args, field, None)
         if value is not None:

@@ -45,7 +45,6 @@ else:  # pragma: no cover - script-mode support
 from neurotalk.config import SessionConfig
 from neurotalk.config_cli import add_config_arguments, load_config_from_args
 from neurotalk.session import ConversationSession
-from neurotalk.soundcheck import run_conversation_soundcheck
 from neurotalk.turns import TurnEventSource, TurnManager, TurnRole
 
 # ---------- config ----------
@@ -93,7 +92,9 @@ def show_pages_from_delim(
     last_pressed = False  # debounce trackball
 
     for i, page in enumerate(pages, start=1):
-        footer = f"\n\n\nPress the trackball button to continue. (Page {i}/{len(pages)})"
+        footer = (
+            f"\n\n\nPress the trackball button to continue. (Page {i}/{len(pages)})"
+        )
         text_stim.setText(page + footer)
 
         event.clearEvents(eventType="keyboard")
@@ -125,6 +126,7 @@ def show_pages_from_delim(
 
     return "done"
 
+
 # ----------------------------------------------------
 def main(
     *,
@@ -135,7 +137,6 @@ def main(
     conflict: str,
     csv_path: Path,
     mixdown: bool = True,
-    soundcheck: bool = True,
     log_level: str = "WARNING",
 ):
     if session not in (1, 2):
@@ -198,13 +199,6 @@ def main(
     # For debouncing the pass button (left button on the trackball)
     last_pass_pressed = False
 
-    if soundcheck:
-        try:
-            run_conversation_soundcheck(conv_session, ui="psychopy", win=win)
-        except KeyboardInterrupt:
-            finalize_and_quit(conv_session, recording_dir, logger, mixdown, win)
-            return
-
     show_instructions = make_text(text="")
     show_sync = make_text(text="Syncing start time with your partner...")
     show_role_txt = make_text(text="", pos=(0, 0.65))
@@ -234,58 +228,50 @@ def main(
     minutes = round(COMM_S / 60.0)
 
     persuade_instr_text_couple = (
-        
         "In this task, we’d like you to have a conversation about a significant, \n"
-        "unresolved conflict or tension in your relationship. \n" 
+        "unresolved conflict or tension in your relationship. \n"
         "Based on your and your partner’s survey responses about your relationship, \n"
         f"we have selected the following conflict area: {conflict_text.upper()}.\n\n\n"
-        
-        "Before the conversation, think about the following: \n\n"
-        "• What the conflict is about\n"
-        "• A concrete example of when this issue makes you upset\n"
-        "• The causes of this issue\n"
-        "• Your role and your partner's role in this conflict\n"
-        "• Potential solutions to this conflict\n\n\n" 
-
-        "IMPORTANT: During this conversation, \n"
-        "try to PERSUADE the other person of your opinion about how to solve this problem.\n"
-        "We are studying how persuasion works in the brain.\n"
-        "During the conversation, propose your solutions to the conflict\n"
-        "and try to convince your partner to agree with YOUR solutions as much as possible.\n"
-        "Your goal is to get them to agree with YOUR SOLUTION to this issue.\n\n\n"
-        
-        f"You will have {minutes} minute{'s' if minutes != 1 else ''} for this conversation.\n"
-        "A timer will show you how many seconds are left.\n\n\n"
-        "Tell the experimenter when you are ready to begin. \n" 
-        "We will turn off sound in the control room to give you both some privacy.\n"
-        "When the scan begins, you’ll first see a fixation cross for 10 seconds.\n"
-        "After that, you will see instructions to begin the conversation."
-    )
-
-    compromise_instr_text_couple = (
-        
-        "In this task, we’d like you to have a conversation about a significant, \n"
-        "unresolved conflict or tension in your relationship. \n" 
-        "Based on your and your partner’s survey responses about your relationship, \n"
-        f"we have selected the following conflict area: {conflict_text.upper()}.\n\n\n"
-        
         "Before the conversation, think about the following: \n\n"
         "• What the conflict is about\n"
         "• A concrete example of when this issue makes you upset\n"
         "• The causes of this issue\n"
         "• Your role and your partner's role in this conflict\n"
         "• Potential solutions to this conflict\n\n\n"
-        
-        "IMPORTANT: During this conversation,\n" 
-        "try to COMPROMISE with your partner about how to solve this problem.\n"
-        "We are studying how collaboration works in the brain. \n" 
-        "During the conversation, work together to identify solutions to the problem\n" 
-        "and try to reconcile any differences of opinion as much as possible.\n" 
-        "Your goal is to find a JOINT SOLUTION to this issue that you both agree on.\n\n\n"
-        
+        "IMPORTANT: During this conversation, \n"
+        "try to PERSUADE the other person of your opinion about how to solve this problem.\n"
+        "We are studying how persuasion works in the brain.\n"
+        "During the conversation, propose your solutions to the conflict\n"
+        "and try to convince your partner to agree with YOUR solutions as much as possible.\n"
+        "Your goal is to get them to agree with YOUR SOLUTION to this issue.\n\n\n"
         f"You will have {minutes} minute{'s' if minutes != 1 else ''} for this conversation.\n"
         "A timer will show you how many seconds are left.\n\n\n"
-        "Tell the experimenter when you are ready to begin. \n" 
+        "Tell the experimenter when you are ready to begin. \n"
+        "We will turn off sound in the control room to give you both some privacy.\n"
+        "When the scan begins, you’ll first see a fixation cross for 10 seconds.\n"
+        "After that, you will see instructions to begin the conversation."
+    )
+
+    compromise_instr_text_couple = (
+        "In this task, we’d like you to have a conversation about a significant, \n"
+        "unresolved conflict or tension in your relationship. \n"
+        "Based on your and your partner’s survey responses about your relationship, \n"
+        f"we have selected the following conflict area: {conflict_text.upper()}.\n\n\n"
+        "Before the conversation, think about the following: \n\n"
+        "• What the conflict is about\n"
+        "• A concrete example of when this issue makes you upset\n"
+        "• The causes of this issue\n"
+        "• Your role and your partner's role in this conflict\n"
+        "• Potential solutions to this conflict\n\n\n"
+        "IMPORTANT: During this conversation,\n"
+        "try to COMPROMISE with your partner about how to solve this problem.\n"
+        "We are studying how collaboration works in the brain. \n"
+        "During the conversation, work together to identify solutions to the problem\n"
+        "and try to reconcile any differences of opinion as much as possible.\n"
+        "Your goal is to find a JOINT SOLUTION to this issue that you both agree on.\n\n\n"
+        f"You will have {minutes} minute{'s' if minutes != 1 else ''} for this conversation.\n"
+        "A timer will show you how many seconds are left.\n\n\n"
+        "Tell the experimenter when you are ready to begin. \n"
         "We will turn off sound in the control room to give you both some privacy.\n"
         "When the scan begins, you’ll first see a fixation cross for 10 seconds.\n"
         "After that, you will see instructions to begin the conversation."
@@ -325,7 +311,9 @@ def main(
     # Now wait for TTL trigger (same as before)
     event.clearEvents(eventType="keyboard")
     trigger_source: str | None = None
-    show_instructions.setText("Waiting for the scanner to start...\n\n(Do not press anything.)")
+    show_instructions.setText(
+        "Waiting for the scanner to start...\n\n(Do not press anything.)"
+    )
 
     while trigger_source is None:
         show_instructions.draw()
@@ -597,12 +585,6 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Produce a mixed speaker/listener WAV file (use --no-mixdown to skip)",
     )
     parser.add_argument(
-        "--soundcheck",
-        default=True,
-        action=argparse.BooleanOptionalAction,
-        help="Run a bi-directional audio soundcheck before the task (use --no-soundcheck to skip).",
-    )
-    parser.add_argument(
         "--fullscreen",
         default=True,
         action=argparse.BooleanOptionalAction,
@@ -636,6 +618,5 @@ if __name__ == "__main__":
         conflict=args.conflict,
         csv_path=args.csv,
         mixdown=args.mixdown,
-        soundcheck=args.soundcheck,
         log_level=args.log_level,
     )

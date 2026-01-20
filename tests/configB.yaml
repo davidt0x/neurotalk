@@ -14,6 +14,7 @@ audio:
   buffer_chunks: 4 # Client-side chunks to buffer before playback
   format_tag: 8 # PyAudio format tag (int16 default)
   mock_devices: true # Use mock audio backend if true (no real I/O)
+  playback_gain: 1.0 # Playback multiplier (updated by soundcheck)
 
 recording:
   directory: "data" # Base directory for recordings
