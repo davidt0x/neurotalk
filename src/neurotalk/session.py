@@ -592,13 +592,17 @@ class ConversationSession:
         output_worker = AudioOutputWorker(
             audio_cfg, recorder=remote_recorder, stream_factory=factory
         )
-        output_worker.set_gain(self.state.playback_gain)
         input_worker = AudioInputWorker(
             audio_cfg,
             self._handle_outbound_packet,
             recorder=local_recorder,
             stream_factory=factory,
         )
+
+        self.state.output_worker = output_worker
+        self.state.input_worker = input_worker
+
+        self.set_playback_gain(self.state.playback_gain)
 
         output_worker.enable_playback(self.state.receive_enabled)
         input_worker.enable_transmit(self.state.transmit_enabled)
@@ -607,9 +611,6 @@ class ConversationSession:
 
         output_worker.start()
         input_worker.start()
-
-        self.state.output_worker = output_worker
-        self.state.input_worker = input_worker
 
         receiver_running = threading.Event()
         receiver_running.set()

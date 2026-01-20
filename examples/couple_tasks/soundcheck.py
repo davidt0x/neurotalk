@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import argparse
 import logging
+import re
 from pathlib import Path
 
+import yaml
 from psychopy import core, logging as pylogging  # type: ignore[import-not-found]
 
 if __package__:
@@ -65,13 +67,10 @@ def main(
         )
         session_cfg.audio.playback_gain = result.playback_gain
         session_cfg.metadata["playback_volume_percent"] = result.volume_percent
-        config_path.parent.mkdir(parents=True, exist_ok=True)
-        session_cfg.to_yaml(config_path)
-        logging.info(
-            "Persisted playback_gain=%.3f (%s%%) from soundcheck to config file at %s",
-            result.playback_gain,
-            result.volume_percent,
+        _write_playback_gain_only(
             config_path,
+            playback_gain=result.playback_gain,
+            volume_percent=result.volume_percent,
         )
     except KeyboardInterrupt:
         logging.info("Soundcheck aborted.")
@@ -111,6 +110,84 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     add_config_arguments(parser)
     return parser
+
+
+def _update_block_value(
+    text: str, *, key: str, value: str, block: str | None = None
+) -> tuple[str, bool]:
+    pattern = rf"(?m)^(?P<indent>\s*){re.escape(key)}:\s*[^#\n]*(?P<comment>\s*#.*)?$"
+    if re.search(pattern, text):
+        updated = re.sub(
+            pattern,
+            rf"\g<indent>{key}: {value}\g<comment>",
+            text,
+            count=1,
+        )
+        return updated, True
+
+    if block is None:
+        return text, False
+
+    block_match = re.search(rf"(?m)^{re.escape(block)}:\s*$", text)
+    if not block_match:
+        addition = f"\n{block}:\n  {key}: {value}\n"
+        return text + addition, True
+
+    after_block = re.search(r"(?m)^[A-Za-z0-9_-]+:\s*$", text[block_match.end() :])
+    insert_pos = block_match.end() + (after_block.start() if after_block else 0)
+    prefix = text[:insert_pos]
+    suffix = text[insert_pos:]
+    if not prefix.endswith("\n"):
+        prefix += "\n"
+    new_line = f"  {key}: {value}\n"
+    return prefix + new_line + suffix, True
+
+
+def _write_playback_gain_only(
+    config_path: Path, *, playback_gain: float, volume_percent: int
+) -> None:
+    try:
+        text = config_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "audio": {"playback_gain": playback_gain},
+            "metadata": {"playback_volume_percent": volume_percent},
+        }
+        config_path.write_text(yaml.safe_dump(payload), encoding="utf-8")
+        logging.info(
+            "Config file not found; created new file with playback_gain at %s",
+            config_path,
+        )
+        return
+
+    updated = text
+    updated, gain_changed = _update_block_value(
+        updated,
+        key="playback_gain",
+        value=f"{playback_gain:.3f}",
+        block="audio",
+    )
+    updated, meta_changed = _update_block_value(
+        updated,
+        key="playback_volume_percent",
+        value=str(volume_percent),
+        block="metadata",
+    )
+
+    if (gain_changed or meta_changed) and updated != text:
+        config_path.write_text(updated, encoding="utf-8")
+        logging.info(
+            "Persisted playback_gain=%.3f (%s%%) to %s (metadata updated=%s)",
+            playback_gain,
+            volume_percent,
+            config_path,
+            meta_changed,
+        )
+    else:
+        logging.info(
+            "No changes written; playback_gain already up to date in %s", config_path
+        )
 
 
 if __name__ == "__main__":
