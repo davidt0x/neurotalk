@@ -116,13 +116,14 @@ def _update_block_value(
     text: str, *, key: str, value: str, block: str | None = None
 ) -> tuple[str, bool]:
     pattern = rf"(?m)^(?P<indent>\s*){re.escape(key)}:\s*[^#\n]*(?P<comment>\s*#.*)?$"
-    if re.search(pattern, text):
-        updated = re.sub(
-            pattern,
-            rf"\g<indent>{key}: {value}\g<comment>",
-            text,
-            count=1,
-        )
+    match = re.search(pattern, text)
+    if match:
+        indent = match.group("indent") or ""
+        comment = match.group("comment") or ""
+        if comment and not comment.startswith(" "):
+            comment = f" {comment}"
+        new_line = f"{indent}{key}: {value}{comment}"
+        updated = re.sub(pattern, new_line, text, count=1)
         return updated, True
 
     if block is None:

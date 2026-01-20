@@ -123,6 +123,14 @@ class AudioConfig:
         if data is None:
             return cls()
         d = dict(data)
+        if "playback_gain" in d:
+            raw_gain = d["playback_gain"]
+            if isinstance(raw_gain, str):
+                stripped = raw_gain.split("#", 1)[0].strip()
+                try:
+                    d["playback_gain"] = float(stripped)
+                except ValueError:
+                    pass
         return cls(**d)
 
     def to_dict(self) -> dict[str, Any]:
