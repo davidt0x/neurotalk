@@ -32,6 +32,7 @@ from neurotalk.control import (
     DEBUG_READY,
     DEBUG_STOP,
     THANKS,
+    TURN_TAKE_PREFIX,
     ControlMessageType,
     SyncTimestamp,
     TurnPassPayload,
@@ -296,14 +297,49 @@ class ConversationSession:
             logger.debug("send_turn_pass send failed: %s", exc, exc_info=exc)
             raise
 
+    def send_turn_take(self, payload: TurnPassPayload) -> None:
+        logger.debug("send_turn_take attempting send: %s", payload)
+        sockets = self.state.sockets
+        if sockets is None:
+            msg = "Session not connected"
+            raise RuntimeError(msg)
+        remote_ip, _, _, port_comm = sockets.remote
+        try:
+            sockets.control.sendto(
+                payload.pack(prefix=TURN_TAKE_PREFIX), (remote_ip, port_comm)
+            )
+            logger.debug("send_turn_take sent to %s:%s", remote_ip, port_comm)
+        except OSError as exc:
+            logger.debug("send_turn_take send failed: %s", exc, exc_info=exc)
+            raise
+
     def pass_turn(
-        self, *, run_time: float, phase_time: float, wall_time: float | None = None
+        self,
+        *,
+        run_time: float,
+        phase_time: float,
+        wall_time: float | None = None,
+        turn_id: int | None = None,
     ) -> None:
         """Notify the remote peer that control has been passed to them."""
 
         now = wall_time if wall_time is not None else time.time()
-        payload = TurnPassPayload(now, run_time, phase_time)
+        payload = TurnPassPayload(now, run_time, phase_time, turn_id=turn_id)
         self.send_turn_pass(payload)
+
+    def take_turn(
+        self,
+        *,
+        run_time: float,
+        phase_time: float,
+        wall_time: float | None = None,
+        turn_id: int | None = None,
+    ) -> None:
+        """Notify the remote peer that we are taking control of the turn."""
+
+        now = wall_time if wall_time is not None else time.time()
+        payload = TurnPassPayload(now, run_time, phase_time, turn_id=turn_id)
+        self.send_turn_take(payload)
 
     def start_segment(
         self,

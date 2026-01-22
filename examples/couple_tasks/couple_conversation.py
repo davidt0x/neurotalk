@@ -294,7 +294,9 @@ def main(
         "YOUR TURN TO SPEAK" if initial_role.is_speaker else "YOUR TURN TO LISTEN"
     )
     pass_text = (
-        "Press trackball button to pass the mic." if initial_role.is_speaker else ""
+        "Press trackball button to pass the mic."
+        if initial_role.is_speaker
+        else "Press trackball button to take the mic."
     )
     show_topic.setText(f"Problem topic: {conflict_text}")
 
@@ -334,18 +336,30 @@ def main(
             except queue.Empty:
                 break
             turn_event = turn_manager.handle_control_event(msg_type, payload)
-            if not turn_event or turn_event.source is not TurnEventSource.REMOTE_PASS:
+            if not turn_event or turn_event.source not in (
+                TurnEventSource.REMOTE_PASS,
+                TurnEventSource.REMOTE_TAKE,
+            ):
                 continue
-            show_role_txt.setText("YOUR TURN TO SPEAK")
-            show_pass.setText("Press trackball button to pass the mic.")
-            toggled_role = "speaker"
+
+            if turn_event.role.is_speaker:
+                show_role_txt.setText("YOUR TURN TO SPEAK")
+                show_pass.setText("Press trackball button to pass the mic.")
+                toggled_role = "speaker"
+                event_name = "partner_pass"
+            else:
+                show_role_txt.setText("YOUR TURN TO LISTEN")
+                show_pass.setText("Press trackball button to take the mic.")
+                toggled_role = "listener"
+                event_name = "partner_take"
+
             logger.log_timing(
                 role_label=toggled_role,
                 run_clock=run_clock,
                 phase_clock=comm_clock,
             )
             logger.log_event(
-                event_name="partner_pass",
+                event_name=event_name,
                 role_label=toggled_role,
                 run_clock=run_clock,
                 phase_clock=comm_clock,
@@ -394,22 +408,26 @@ def main(
                 return
 
             if key == KEY_PASS:
-                # Only speakers can pass
-                if not turn_manager.is_speaker:
-                    # ignore if listener presses the trackball
-                    continue
-
                 time_here = time.time()
                 run_here = run_clock.getTime()
                 comm_here = comm_clock.getTime()
 
-                turn_manager.pass_turn(
-                    run_time=run_here, phase_time=comm_here, wall_time=time_here
-                )
-
-                show_role_txt.setText("YOUR TURN TO LISTEN")
-                show_pass.setText("")
-                toggled_role = "listener"
+                if turn_manager.is_speaker:
+                    turn_manager.pass_turn(
+                        run_time=run_here, phase_time=comm_here, wall_time=time_here
+                    )
+                    show_role_txt.setText("YOUR TURN TO LISTEN")
+                    show_pass.setText("Press trackball button to take the mic.")
+                    toggled_role = "listener"
+                    event_name = "pass_press"
+                else:
+                    turn_manager.take_turn(
+                        run_time=run_here, phase_time=comm_here, wall_time=time_here
+                    )
+                    show_role_txt.setText("YOUR TURN TO SPEAK")
+                    show_pass.setText("Press trackball button to pass the mic.")
+                    toggled_role = "speaker"
+                    event_name = "take_press"
 
                 logger.log_timing(
                     role_label=toggled_role,
@@ -418,7 +436,7 @@ def main(
                     phase_time=comm_here,
                 )
                 logger.log_event(
-                    event_name="pass_press",
+                    event_name=event_name,
                     role_label=toggled_role,
                     run_clock=run_clock,
                     phase_clock=comm_clock,

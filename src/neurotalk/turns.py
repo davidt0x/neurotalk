@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import threading
+import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 from typing import Protocol
 
@@ -34,6 +35,16 @@ class ConversationSessionLike(Protocol):
         run_time: float,
         phase_time: float,
         wall_time: float | None = None,
+        turn_id: int | None = None,
+    ) -> None: ...
+
+    def take_turn(
+        self,
+        *,
+        run_time: float,
+        phase_time: float,
+        wall_time: float | None = None,
+        turn_id: int | None = None,
     ) -> None: ...
 
 
@@ -53,7 +64,9 @@ class TurnEventSource(Enum):
 
     INITIAL = "initial"
     LOCAL_PASS = "local_pass"
+    LOCAL_TAKE = "local_take"
     REMOTE_PASS = "remote_pass"
+    REMOTE_TAKE = "remote_take"
 
 
 @dataclass(frozen=True)
@@ -86,6 +99,8 @@ class TurnManager:
         self._remote_segment_active = False
         self._local_counter = 0
         self._remote_counter = 0
+        self._turn_id_counter = 0
+        self._last_turn_id: int | None = None
 
     # ---- public API -------------------------------------------------
     @property
@@ -100,6 +115,8 @@ class TurnManager:
         """Begin turn management in the requested role."""
 
         with self._lock:
+            self._turn_id_counter = 0
+            self._last_turn_id = None
             return self._transition_to(initial_role, TurnEventSource.INITIAL)
 
     def stop(self) -> None:
@@ -118,6 +135,7 @@ class TurnManager:
         run_time: float,
         phase_time: float,
         wall_time: float | None = None,
+        turn_id: int | None = None,
     ) -> TurnEvent:
         """Yield control to the partner and enter the listener role."""
 
@@ -125,22 +143,102 @@ class TurnManager:
             if self._current_role is not TurnRole.SPEAKER:
                 msg = "Cannot pass turn when not the speaker"
                 raise RuntimeError(msg)
+            if turn_id is None:
+                resolved_turn_id = self._next_turn_id()
+            else:
+                resolved_turn_id = turn_id
+                self._turn_id_counter = max(self._turn_id_counter, resolved_turn_id)
+                self._last_turn_id = resolved_turn_id
+            wall_here = wall_time if wall_time is not None else time.time()
             self._session.pass_turn(
-                run_time=run_time, phase_time=phase_time, wall_time=wall_time
+                run_time=run_time,
+                phase_time=phase_time,
+                wall_time=wall_here,
+                turn_id=resolved_turn_id,
             )
-            return self._transition_to(TurnRole.LISTENER, TurnEventSource.LOCAL_PASS)
+            payload = TurnPassPayload(
+                wall_here,
+                run_time,
+                phase_time,
+                turn_id=resolved_turn_id,
+            )
+            return self._transition_to(
+                TurnRole.LISTENER, TurnEventSource.LOCAL_PASS, payload=payload
+            )
+
+    def take_turn(
+        self,
+        *,
+        run_time: float,
+        phase_time: float,
+        wall_time: float | None = None,
+        turn_id: int | None = None,
+    ) -> TurnEvent:
+        """Seize control from the partner and become the speaker."""
+
+        with self._lock:
+            if self._current_role is not TurnRole.LISTENER:
+                msg = "Cannot take turn when not the listener"
+                raise RuntimeError(msg)
+            if turn_id is None:
+                resolved_turn_id = self._next_turn_id()
+            else:
+                resolved_turn_id = turn_id
+                self._turn_id_counter = max(self._turn_id_counter, resolved_turn_id)
+                self._last_turn_id = resolved_turn_id
+            wall_here = wall_time if wall_time is not None else time.time()
+            self._session.take_turn(
+                run_time=run_time,
+                phase_time=phase_time,
+                wall_time=wall_here,
+                turn_id=resolved_turn_id,
+            )
+            payload = TurnPassPayload(
+                wall_here,
+                run_time,
+                phase_time,
+                turn_id=resolved_turn_id,
+            )
+            return self._transition_to(
+                TurnRole.SPEAKER, TurnEventSource.LOCAL_TAKE, payload=payload
+            )
 
     def handle_control_event(
         self, msg_type: ControlMessageType, payload: object | None
     ) -> TurnEvent | None:
         """React to remote TURN_PASS messages (ignores other event types)."""
 
-        if msg_type is not ControlMessageType.TURN_PASS:
+        if msg_type not in (
+            ControlMessageType.TURN_PASS,
+            ControlMessageType.TURN_TAKE,
+        ):
             return None
+
         tp_payload = payload if isinstance(payload, TurnPassPayload) else None
+        target_role = (
+            TurnRole.SPEAKER
+            if msg_type is ControlMessageType.TURN_PASS
+            else TurnRole.LISTENER
+        )
+        source = (
+            TurnEventSource.REMOTE_PASS
+            if msg_type is ControlMessageType.TURN_PASS
+            else TurnEventSource.REMOTE_TAKE
+        )
+        turn_id = tp_payload.turn_id if tp_payload else None
+
         with self._lock:
+            if self._should_ignore_turn(turn_id):
+                return None
+
+            applied_id = self._record_remote_turn_id(turn_id)
+            if tp_payload and tp_payload.turn_id != applied_id:
+                tp_payload = replace(tp_payload, turn_id=applied_id)
+
             return self._transition_to(
-                TurnRole.SPEAKER, TurnEventSource.REMOTE_PASS, payload=tp_payload
+                target_role,
+                source,
+                payload=tp_payload,
             )
 
     # ---- internal helpers ------------------------------------------
@@ -198,6 +296,36 @@ class TurnManager:
             return
         self._session.stop_segment(target="remote")
         self._remote_segment_active = False
+
+    def _should_ignore_turn(self, turn_id: int | None) -> bool:
+        """Drop stale/duplicate transitions based on turn_id when provided."""
+
+        return (
+            turn_id is not None
+            and self._last_turn_id is not None
+            and turn_id <= self._last_turn_id
+        )
+
+    def _record_remote_turn_id(self, turn_id: int | None) -> int:
+        """
+        Update Lamport-style turn counter using a remote event id (or synthesize one).
+        """
+
+        if turn_id is None:
+            self._turn_id_counter += 1
+            applied = self._turn_id_counter
+        else:
+            self._turn_id_counter = max(self._turn_id_counter, turn_id)
+            applied = self._turn_id_counter
+        self._last_turn_id = applied
+        return applied
+
+    def _next_turn_id(self) -> int:
+        """Allocate the next turn_id for locally initiated events."""
+
+        self._turn_id_counter += 1
+        self._last_turn_id = self._turn_id_counter
+        return self._turn_id_counter
 
     @staticmethod
     def _format_label(template: str, index: int) -> str:

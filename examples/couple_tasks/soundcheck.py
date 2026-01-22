@@ -13,7 +13,8 @@ import re
 from pathlib import Path
 
 import yaml
-from psychopy import core, logging as pylogging  # type: ignore[import-not-found]
+from psychopy import core  # type: ignore[import-not-found]
+from psychopy import logging as pylogging
 
 if __package__:
     from .utils import create_window

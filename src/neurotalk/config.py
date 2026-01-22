@@ -8,6 +8,7 @@ legacy CONV/DIAD scripts but callers are free to override anything.
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -127,10 +128,8 @@ class AudioConfig:
             raw_gain = d["playback_gain"]
             if isinstance(raw_gain, str):
                 stripped = raw_gain.split("#", 1)[0].strip()
-                try:
+                with contextlib.suppress(ValueError):
                     d["playback_gain"] = float(stripped)
-                except ValueError:
-                    pass
         return cls(**d)
 
     def to_dict(self) -> dict[str, Any]:
