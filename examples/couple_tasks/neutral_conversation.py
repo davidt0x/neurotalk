@@ -109,9 +109,9 @@ def main(
     persuade_instr_text = (
         "Next, you and your partner will discuss how the charity funds should be allocated.\n"
         f"You'll focus on how to address: {display_topic}.\n\n\n"
-        "IMPORTANT: During this conversation, try to PERSUADE the other person of your opinion.\n"
-        "We are studying how persuasion works in the brain, so please try to convince the other \n"
-        "person of your opinion as much as possible and get them to understand your perspective.\n"
+        "IMPORTANT: During this conversation, try to PERSUADE your partner.\n"
+        "We are studying how persuasion works in the brain, so please try to convince your partner \n"
+        "as much as possible and get them to understand your perspective.\n"
         "These instructions are only for you. So, please don't share them with your partner.\n\n\n"
         "You will have 10 minutes for this conversation. \n"
         "A timer will show you how many seconds are left.\n\n\n"
