@@ -155,6 +155,14 @@ def main(
     assignment = load_assignment_row(csv_path, pid)
     starters = assignment.starters()
     exp_condition = assignment.condition
+    
+    
+    # --- minimal addition: flip for session 2 ---
+    if session == 2 and exp_condition is not None:
+        c = exp_condition.strip().lower()
+        flip = {"persuade": "compromise", "compromise": "persuade"}
+        exp_condition = flip.get(c, exp_condition)  # leave unchanged if unexpected value
+    # -------------------------------------------
 
     first_speaker = pick_first_speaker(
         starters, session=session, session_type="couple"
@@ -245,7 +253,12 @@ def main(
         "and try to convince your partner to agree with YOUR solutions as much as possible.\n"
         "Your goal is to get them to agree with YOUR SOLUTION to this issue.\n\n\n"
         f"You will have {minutes} minute{'s' if minutes != 1 else ''} for this conversation.\n"
-        "A timer will show you how many seconds are left.\n\n\n"
+        "A timer will show you how many seconds are left.\n\n"
+        "During the conversation, only one person can speak at a time.\n" 
+        "When you are speaking, you can press the trackball button \n"
+        "to pass the mic to your partner whenever you are done.\n"
+        "When you are listening, you can press the trackball button\n" 
+         "to take the mic if you want to speak. \n\n\n"
         "Tell the experimenter when you are ready to begin. \n"
         "We will turn off sound in the control room to give you both some privacy.\n"
         "When the scan begins, you’ll first see a fixation cross for 10 seconds.\n"
@@ -270,7 +283,12 @@ def main(
         "and try to reconcile any differences of opinion as much as possible.\n"
         "Your goal is to find a JOINT SOLUTION that you both agree on.\n\n\n"
         f"You will have {minutes} minute{'s' if minutes != 1 else ''} for this conversation.\n"
-        "A timer will show you how many seconds are left.\n\n\n"
+        "A timer will show you how many seconds are left.\n\n"
+        "During the conversation, only one person can speak at a time.\n" 
+        "When you are speaking, you can press the trackball button \n"
+        "to pass the mic to your partner whenever you are done.\n"
+        "When you are listening, you can press the trackball button\n" 
+         "to take the mic if you want to speak. \n\n\n"
         "Tell the experimenter when you are ready to begin. \n"
         "We will turn off sound in the control room to give you both some privacy.\n"
         "When the scan begins, you’ll first see a fixation cross for 10 seconds.\n"

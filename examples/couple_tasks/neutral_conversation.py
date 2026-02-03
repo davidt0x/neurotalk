@@ -92,6 +92,14 @@ def main(
     starters = assignment.starters()
     exp_condition = assignment.condition
 
+
+    # ---- add this block ----
+    if session == 2 and exp_condition:
+        c = exp_condition.strip().lower()
+        flip = {"persuade": "compromise", "compromise": "persuade"}
+        exp_condition = flip.get(c, exp_condition)  # leave unchanged if unexpected
+    # ------------------------
+    
     discussion_topic = (
         assignment.first_topic if session == 1 else assignment.second_topic
     )
@@ -108,26 +116,40 @@ def main(
 
     persuade_instr_text = (
         "Next, you and your partner will discuss how the charity funds should be allocated.\n"
-        f"You'll focus on how to address: {display_topic}.\n\n\n"
+        f"You'll focus on how to address: {display_topic}.\n\n"
         "IMPORTANT: During this conversation, try to PERSUADE your partner.\n"
         "We are studying how persuasion works in the brain, so please try to convince your partner \n"
         "as much as possible and get them to understand your perspective.\n"
-        "These instructions are only for you. So, please don't share them with your partner.\n\n\n"
+        "These instructions are only for you. So, please don't share them with your partner.\n\n"
         "You will have 10 minutes for this conversation. \n"
-        "A timer will show you how many seconds are left.\n\n\n"
+        "A timer will show you how many seconds are left.\n\n"
+        
+        "During the conversation, only one person can speak at a time.\n" 
+        "When you are speaking, you can press the trackball button \n"
+        "to pass the mic to your partner whenever you are done.\n"
+        "When you are listening, you can press the trackball button\n" 
+        "to take the mic if you want to speak. \n\n"
+        
         "Tell the experimenter when you are ready to begin.\n"
         "You’ll first see a fixation cross for 10 seconds.\n"
         "After that, you will see instructions to begin the conversation."
     )
     compromise_instr_text = (
         "Next, you and your partner will discuss how the charity funds should be allocated.\n"
-        f"You'll focus on how to address: {display_topic}.\n\n\n"
+        f"You'll focus on how to address: {display_topic}.\n\n"
         "IMPORTANT: During this conversation, try to find a JOINT SOLUTION that you both agree on.\n"
         "We are studying how collaboration works in the brain, so please try to reconcile any \n"
         "differences of opinion as much as possible and look for a shared perspective.\n"
-        "These instructions are only for you. So, please don't share them with your partner.\n\n\n"
+        "These instructions are only for you. So, please don't share them with your partner.\n\n"
         "You will have 10 minutes for this conversation. \n"
-        "A timer will show you how many seconds are left.\n\n\n"
+        "A timer will show you how many seconds are left.\n\n"
+        
+        "During the conversation, only one person can speak at a time.\n" 
+        "When you are speaking, you can press the trackball button \n"
+        "to pass the mic to your partner whenever you are done.\n"
+        "When you are listening, you can press the trackball button\n" 
+        "to take the mic if you want to speak. \n\n"
+         
         "Tell the experimenter when you are ready to begin.\n"
         "You’ll first see a fixation cross for 10 seconds.\n"
         "After that, you will see instructions to begin the conversation."
