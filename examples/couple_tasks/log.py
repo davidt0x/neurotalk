@@ -52,9 +52,12 @@ class TaskLogger:
 
         timings_path = data_dir / f"{base}_{task_code}_TimingsLog_{date_str}.csv"
         self.timings_file: TextIO = timings_path.open("w", newline="", encoding="utf-8")
+
+        
         self.timings_file.write(
-            "dyad,session,session_type,exp_condition,role,time.time,run.time,comm.time,conflict_text,first_speaker,participant_role\n"
+            "dyad,session,session_type,exp_condition,event,role,time.time,run.time,comm.time,conflict_text,first_speaker,participant_role\n"
         )
+
         self.timings_file.flush()
 
         ttl_path = data_dir / f"{base}_{task_code}_TTLtimestamps_{date_str}.csv"
@@ -100,10 +103,13 @@ class TaskLogger:
         self.experiment.addData("participant_role", self.participant_role)
         self.experiment.nextEntry()
 
+
+        
     def log_timing(
         self,
         *,
         role_label: str,
+        event_name: str = "",
         run_clock: core.Clock | None = None,
         phase_clock: core.Clock | None = None,
         wall_time: float | None = None,
@@ -123,8 +129,9 @@ class TaskLogger:
             phase_value = phase_clock.getTime()
         else:
             phase_value = ""
+        
         self.timings_file.write(
-            f"{self.dyad},{self.session},{self.session_type},{self.exp_condition},{role_label},"
+            f"{self.dyad},{self.session},{self.session_type},{self.exp_condition},{event_name},{role_label},"
             f"{wall_time},{run_time},{phase_value},{self.conflict_text},{self.first_speaker},{self.participant_role}\n"
         )
         self.timings_file.flush()

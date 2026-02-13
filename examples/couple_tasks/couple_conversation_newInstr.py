@@ -467,12 +467,14 @@ def main(
                 show_pass.setText("Press trackball button to take the mic.")
                 toggled_role = "listener"
                 event_name = "partner_take"
-
+            
             logger.log_timing(
+                event_name=event_name,      # "partner_pass" or "partner_take"
                 role_label=toggled_role,
                 run_clock=run_clock,
                 phase_clock=comm_clock,
             )
+            
             logger.log_event(
                 event_name=event_name,
                 role_label=toggled_role,
@@ -544,12 +546,15 @@ def main(
                     toggled_role = "speaker"
                     event_name = "take_press"
 
+                
                 logger.log_timing(
-                    role_label=toggled_role,
+                    event_name=event_name,      # "pass_press" or "take_press"
+                    role_label=toggled_role,    # resulting role
                     wall_time=time_here,
                     run_time=run_here,
                     phase_time=comm_here,
                 )
+                
                 logger.log_event(
                     event_name=event_name,
                     role_label=toggled_role,
