@@ -117,9 +117,11 @@ def main(pid: str, session: int, conflict: str, csv_path: str):
 
     instr = (
         f"In the last task, you discussed {conflict_text.upper()} with your partner.\n\n\n"
-        f"Next, we would like to know more about this problem. For 2 minutes,\n"
-        "please say in your own words why this topic is a problem in your relationship.\n\n\n"
-        "This recording is confidential. The experimenter has muted the audio, and what you say now will\n"
+        f"Next, we would like you to report your own personal opinion on {conflict_text.upper()}.\n"
+        "For N minutes, please speak aloud \n" 
+        "whatever you can about your thoughts and feelings on the topic.\n\n\n"
+        "This recording is confidential.\n" 
+        "The experimenter has muted the audio, and what you say now will\n"
         "NOT be shared with your partner.\n\n\n"
         "You’ll first see a fixation cross for 10 seconds.\n"
         " After that, you will see instructions to begin speaking."

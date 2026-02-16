@@ -330,7 +330,7 @@ def main(
     event.clearEvents(eventType="keyboard")
     trigger_source: str | None = None
     show_instructions.setText(
-        "Waiting for the scanner to start...\n\n(Do not press anything.)"
+        "Waiting for the scanner to start...\n\n"
     )
 
     while trigger_source is None:
