@@ -32,6 +32,7 @@ from neurotalk.soundcheck import run_conversation_soundcheck
 SCANNER = None
 WIN_SIZE = (1280, 800)
 FULLSCR = True
+DISPLAY = 0
 
 
 def main(
@@ -41,8 +42,12 @@ def main(
     ui: str,
     scanner: str | None,
     fullscr: bool,
+    display: int,
     log_level: str,
 ) -> None:
+    if display < 0:
+        msg = "--display must be >= 0"
+        raise ValueError(msg)
     level_name = log_level.upper()
     level_value = getattr(logging, level_name, logging.INFO)
     logging.basicConfig(level=level_value, format="%(message)s")
@@ -57,7 +62,9 @@ def main(
         conv_session.connect()
 
         if ui in {"auto", "psychopy"}:
-            win = create_window(scanner=scanner, size=WIN_SIZE, fullscr=fullscr)
+            win = create_window(
+                scanner=scanner, size=WIN_SIZE, fullscr=fullscr, screen=display
+            )
 
         result = run_conversation_soundcheck(conv_session, ui=ui, win=win)
         logging.info(
@@ -102,6 +109,12 @@ def _build_parser() -> argparse.ArgumentParser:
         choices=["skyra", "prisma"],
         default=None,
         help="Monitor profile to use for the scanner display (default: laptop).",
+    )
+    parser.add_argument(
+        "--display",
+        type=int,
+        default=DISPLAY,
+        help="Display index to use for PsychoPy window (0=primary monitor).",
     )
     parser.add_argument(
         "--log-level",
@@ -206,5 +219,6 @@ if __name__ == "__main__":
         ui=args.ui,
         scanner=args.scanner,
         fullscr=args.fullscreen,
+        display=args.display,
         log_level=args.log_level,
     )

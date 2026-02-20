@@ -51,6 +51,7 @@ from neurotalk.turns import TurnEventSource, TurnManager, TurnRole
 SCANNER = None  # default monitor profile (override via --scanner)
 WIN_SIZE = (1280, 800)
 FULLSCR = True
+DISPLAY = 0
 LETTER_H = 0.07
 WRAP_W = 2
 RECORDING_LABEL = "couple_conversation"
@@ -58,6 +59,7 @@ RECORDING_LABEL = "couple_conversation"
 INSTR_BLANK_S = 10.0  # blank after instruction/trigger, before conversation UI
 COMM_S = 600.0
 SYNC_START_LAG = 12.0  # lead-in before instructions to sync presentation timing
+PASS_REFRACTORY_S = 0.5  # ignore pass/take requests for a brief lockout window
 
 KEY_PASS = "1"
 KEY_QUIT = "escape"
@@ -76,6 +78,7 @@ def main(
     session_cfg: SessionConfig,
     scanner: str | None = SCANNER,
     fullscr: bool = True,
+    display: int = DISPLAY,
     session: int,
     conflict: str,
     csv_path: Path,
@@ -87,6 +90,9 @@ def main(
         raise ValueError(msg)
     if not (conflict and conflict.strip()):
         msg = "You must provide a non-empty --conflict string"
+        raise ValueError(msg)
+    if display < 0:
+        msg = "--display must be >= 0"
         raise ValueError(msg)
 
     cfg = SessionConfig.from_dict(session_cfg.to_dict())
@@ -132,7 +138,7 @@ def main(
     level_value = getattr(logging, level_name, logging.WARNING)
     logging.console.setLevel(level_value)
 
-    win = create_window(scanner=scanner, size=WIN_SIZE, fullscr=fullscr)
+    win = create_window(scanner=scanner, size=WIN_SIZE, fullscr=fullscr, screen=display)
     make_text = text_factory(win, letter_height=LETTER_H, wrap_width=WRAP_W)
 
     # Trackball: treated as a standard mouse
@@ -141,6 +147,7 @@ def main(
 
     # For debouncing the pass button (left button on the trackball)
     last_pass_pressed = False
+    next_turn_change_allowed_at = 0.0
 
     show_instructions = make_text(text="")
     show_sync = make_text(text="Syncing start time with your partner...")
@@ -364,6 +371,9 @@ def main(
                 run_clock=run_clock,
                 phase_clock=comm_clock,
             )
+            next_turn_change_allowed_at = max(
+                next_turn_change_allowed_at, time.time() + PASS_REFRACTORY_S
+            )
 
         current_role_label = "speaker" if turn_manager.is_speaker else "listener"
         keys_ttl = event.getKeys([TTL_KEY])
@@ -409,6 +419,8 @@ def main(
 
             if key == KEY_PASS:
                 time_here = time.time()
+                if time_here < next_turn_change_allowed_at:
+                    continue
                 run_here = run_clock.getTime()
                 comm_here = comm_clock.getTime()
 
@@ -441,6 +453,7 @@ def main(
                     run_clock=run_clock,
                     phase_clock=comm_clock,
                 )
+                next_turn_change_allowed_at = time_here + PASS_REFRACTORY_S
 
     turn_manager.stop()
 
@@ -518,6 +531,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Monitor profile to use for the scanner display (default: laptop)",
     )
     parser.add_argument(
+        "--display",
+        type=int,
+        default=DISPLAY,
+        help="Display index to use for PsychoPy window (0=primary monitor).",
+    )
+    parser.add_argument(
         "--log-level",
         type=str,
         default="WARNING",
@@ -535,6 +554,7 @@ if __name__ == "__main__":
         session_cfg=session_cfg,
         scanner=args.scanner,
         fullscr=args.fullscreen,
+        display=args.display,
         session=args.session,
         conflict=args.conflict,
         csv_path=args.csv,

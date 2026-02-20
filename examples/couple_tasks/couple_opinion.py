@@ -45,6 +45,7 @@ else:  # pragma: no cover - script-mode support
 SCANNER = None
 WIN_SIZE = (1280, 800)
 FULLSCR = True
+DISPLAY = 0
 LETTER_H = 0.07
 WRAP_W = 2
 
@@ -65,12 +66,22 @@ CSV_FILENAME = "participant_counterbalancing.csv"
 SESSION_TYPE = "couple"
 
 
-def main(pid: str, session: int, conflict: str, csv_path: str):
+def main(
+    pid: str,
+    session: int,
+    conflict: str,
+    csv_path: str,
+    *,
+    display: int = DISPLAY,
+):
     if session not in (1, 2):
         msg = "Session must be 1 or 2"
         raise ValueError(msg)
     if not (conflict and conflict.strip()):
         msg = "You must provide a non-empty --conflict string"
+        raise ValueError(msg)
+    if display < 0:
+        msg = "--display must be >= 0"
         raise ValueError(msg)
 
     dyad, role = decode_pid(pid)
@@ -96,7 +107,7 @@ def main(pid: str, session: int, conflict: str, csv_path: str):
     )
     logging.console.setLevel(logging.WARNING)
 
-    win = create_window(scanner=SCANNER, size=WIN_SIZE, fullscr=FULLSCR)
+    win = create_window(scanner=SCANNER, size=WIN_SIZE, fullscr=FULLSCR, screen=display)
     make_text = text_factory(win, letter_height=LETTER_H, wrap_width=WRAP_W)
 
     audio_data: np.ndarray | None = None
@@ -292,5 +303,17 @@ if __name__ == "__main__":
         default=CSV_FILENAME,
         help="Path to participant_counterbalancing.csv",
     )
+    ap.add_argument(
+        "--display",
+        type=int,
+        default=DISPLAY,
+        help="Display index to use for PsychoPy window (0=primary monitor).",
+    )
     args = ap.parse_args()
-    main(pid=args.pid, session=args.session, conflict=args.conflict, csv_path=args.csv)
+    main(
+        pid=args.pid,
+        session=args.session,
+        conflict=args.conflict,
+        csv_path=args.csv,
+        display=args.display,
+    )

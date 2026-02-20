@@ -212,12 +212,18 @@ def create_window(
     scanner: str | None,
     size: tuple[int, int],
     fullscr: bool,
+    screen: int = 0,
     color: str = "black",
     units: str = "norm",
 ):
     mon = make_monitor(scanner)
     win = visual.Window(
-        size=size, color=color, fullscr=fullscr, units=units, monitor=mon
+        size=size,
+        color=color,
+        fullscr=fullscr,
+        units=units,
+        monitor=mon,
+        screen=screen,
     )
     win.mouseVisible = False
     return win

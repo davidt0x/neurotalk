@@ -42,6 +42,7 @@ from neurotalk.turns import TurnEventSource, TurnManager, TurnRole
 SCANNER = None
 WIN_SIZE = (1280, 800)
 FULLSCR = True
+DISPLAY = 0
 LETTER_H = 0.07
 WRAP_W = 2
 
@@ -49,6 +50,7 @@ INTRO_S = 10.0  # intro dwell before communication
 COMM_S = 600.0  # communication phase duration (s)
 SYNC_START_LAG = 12.0  # lead-in before instructions to sync timing
 RECORDING_LABEL = "neutral_conversation"
+PASS_REFRACTORY_S = 0.5  # ignore pass/take requests for a brief lockout window
 
 KEY_PASS = "1"
 KEY_QUIT = "escape"
@@ -73,6 +75,7 @@ def main(
     *,
     session_cfg: SessionConfig,
     fullscr: bool = True,
+    display: int = DISPLAY,
     session: int,
     csv_path: Path,
     mixdown: bool,
@@ -80,6 +83,9 @@ def main(
 ) -> None:
     if session not in (1, 2):
         msg = "Session must be 1 or 2"
+        raise ValueError(msg)
+    if display < 0:
+        msg = "--display must be >= 0"
         raise ValueError(msg)
 
     cfg = SessionConfig.from_dict(session_cfg.to_dict())
@@ -168,7 +174,7 @@ def main(
     level_name = log_level.upper()
     logging.console.setLevel(getattr(logging, level_name, logging.WARNING))
 
-    win = create_window(scanner=SCANNER, size=WIN_SIZE, fullscr=fullscr)
+    win = create_window(scanner=SCANNER, size=WIN_SIZE, fullscr=fullscr, screen=display)
     make_text = text_factory(win, letter_height=LETTER_H, wrap_width=WRAP_W)
 
     # Trackball: treated as a standard mouse
@@ -177,6 +183,7 @@ def main(
 
     # For debouncing the pass button (left button on the trackball)
     last_pass_pressed = False
+    next_turn_change_allowed_at = 0.0
 
     show_instructions = make_text(text="")
     show_sync = make_text(text="Syncing start time with your partner...")
@@ -357,6 +364,9 @@ def main(
                 run_clock=run_clock,
                 phase_clock=comm_clock,
             )
+            next_turn_change_allowed_at = max(
+                next_turn_change_allowed_at, time.time() + PASS_REFRACTORY_S
+            )
 
         current_role_label = "speaker" if turn_manager.is_speaker else "listener"
 
@@ -403,6 +413,8 @@ def main(
 
             if key == KEY_PASS:
                 time_here = time.time()
+                if time_here < next_turn_change_allowed_at:
+                    continue
                 run_here = run_clock.getTime()
                 comm_here = comm_clock.getTime()
 
@@ -436,6 +448,7 @@ def main(
                     run_clock=run_clock,
                     phase_clock=comm_clock,
                 )
+                next_turn_change_allowed_at = time_here + PASS_REFRACTORY_S
 
     turn_manager.stop()
 
@@ -502,6 +515,12 @@ if __name__ == "__main__":
         help="Run in fullscreen mode (use --no-fullscreen for windowed).",
     )
     parser.add_argument(
+        "--display",
+        type=int,
+        default=DISPLAY,
+        help="Display index to use for PsychoPy window (0=primary monitor).",
+    )
+    parser.add_argument(
         "--log-level",
         type=str,
         default="WARNING",
@@ -513,6 +532,7 @@ if __name__ == "__main__":
     main(
         session_cfg=session_cfg,
         fullscr=args.fullscreen,
+        display=args.display,
         session=args.session,
         csv_path=args.csv,
         mixdown=args.mixdown,
