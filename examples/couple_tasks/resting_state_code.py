@@ -13,11 +13,11 @@ from psychopy import core, event, logging, visual
 
 # ----------------- config -----------------
 FULLSCR = True  # fullscreen recommended in scanner
-BG_COLOR = "black"      # ✅ black background
-FIX_COLOR = "white"     # ✅ white fixation
+BG_COLOR = "black"  # ✅ black background
+FIX_COLOR = "white"  # ✅ white fixation
 
-INSTR_COLOR = "white"   # ✅ make instruction text visible on black
-DONE_COLOR  = "white"
+INSTR_COLOR = "white"  # ✅ make instruction text visible on black
+DONE_COLOR = "white"
 
 FIX_CHAR = "+"
 FIX_HEIGHT_PX = 80  # fixation size (units='pix')

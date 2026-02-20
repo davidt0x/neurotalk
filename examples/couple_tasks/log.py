@@ -53,7 +53,6 @@ class TaskLogger:
         timings_path = data_dir / f"{base}_{task_code}_TimingsLog_{date_str}.csv"
         self.timings_file: TextIO = timings_path.open("w", newline="", encoding="utf-8")
 
-        
         self.timings_file.write(
             "dyad,session,session_type,exp_condition,event,role,time.time,run.time,comm.time,conflict_text,first_speaker,participant_role\n"
         )
@@ -103,8 +102,6 @@ class TaskLogger:
         self.experiment.addData("participant_role", self.participant_role)
         self.experiment.nextEntry()
 
-
-        
     def log_timing(
         self,
         *,
@@ -129,7 +126,7 @@ class TaskLogger:
             phase_value = phase_clock.getTime()
         else:
             phase_value = ""
-        
+
         self.timings_file.write(
             f"{self.dyad},{self.session},{self.session_type},{self.exp_condition},{event_name},{role_label},"
             f"{wall_time},{run_time},{phase_value},{self.conflict_text},{self.first_speaker},{self.participant_role}\n"
