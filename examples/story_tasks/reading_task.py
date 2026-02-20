@@ -11,13 +11,48 @@ import wave
 import numpy as np
 import pandas as pd
 import sounddevice as sd
-from psychopy import core, event, logging, visual
+from psychopy import core, event, logging, monitors, visual
 
 FIXATION_DURATION = 10  # seconds
 SAMPLE_RATE = 16000
 CHANNELS = 1  # mono
 DTYPE = "int16"
 POLL_INTERVAL = 0.1
+WIN_SIZE = (1920, 1080)
+
+
+def make_monitor(scanner: str | None):
+    if scanner == "skyra":
+        mon = monitors.Monitor("skyra")
+        mon.setSizePix((1920, 1080))
+        mon.setWidth(64)
+        mon.setDistance(89)
+        mon.save()
+    elif scanner == "prisma":
+        mon = monitors.Monitor("prisma")
+        mon.setSizePix((1920, 1080))
+        mon.setWidth(56)
+        mon.setDistance(107.5)
+        mon.save()
+    else:
+        mon = monitors.Monitor("defaultLaptop")
+    return mon
+
+
+def create_window(
+    *,
+    scanner: str | None,
+    size: tuple[int, int],
+    fullscr: bool,
+    color: str = "black",
+    units: str = "norm",
+):
+    mon = make_monitor(scanner)
+    win = visual.Window(
+        size=size, color=color, fullscr=fullscr, units=units, monitor=mon
+    )
+    win.mouseVisible = False
+    return win
 
 
 class EscapeHandler:
@@ -46,7 +81,7 @@ class EscapeHandler:
             core.wait(min(POLL_INTERVAL, max(0.0, timer.getTime())))
 
 
-def main(sub_id: str, windowed: bool, take: int | None = None) -> None:
+def main(sub_id: str, scanner: str, fullscreen: bool, take: int | None = None) -> None:
     file_name = f"sub-{sub_id}_task-reading_audio.wav"
     audio_data = np.zeros((0, CHANNELS), dtype=DTYPE)
     handler = EscapeHandler()
@@ -56,8 +91,8 @@ def main(sub_id: str, windowed: bool, take: int | None = None) -> None:
         df = df.iloc[:take]
         logging.warn(f"Taking first {take} sentences only.")
 
-    win = visual.Window(color="black", monitor="testMonitor", fullscr=not windowed)
-    win.mouseVisible = False
+    win = create_window(scanner=scanner, size=WIN_SIZE, fullscr=fullscreen)
+
     message = visual.TextStim(win, "", autoDraw=True, name="message")
 
     run_clock = core.Clock()
@@ -133,14 +168,25 @@ In the next task, you will read a 13-minute story aloud. The story was told live
         wf.writeframes(audio_data.tobytes())
 
     win.close()
-    core.quit()
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("sub_id")
+    parser = argparse.ArgumentParser("Reading task")
+    parser.add_argument("sub_id", type=str, help="Specify participant #")
     parser.add_argument("-t", "--take", type=int, default=None)
-    parser.add_argument("-w", "--windowed", action="store_true", default=False)
-    args = parser.parse_args()
+    parser.add_argument(
+        "--fullscreen",
+        default=True,
+        action=argparse.BooleanOptionalAction,
+        help="Run in fullscreen mode (use --no-fullscreen for windowed).",
+    )
+    parser.add_argument(
+        "--scanner",
+        choices=["skyra", "prisma"],
+        default=None,
+        help="Monitor profile to use for the scanner display (default: laptop)",
+    )
+    _args = parser.parse_args()
 
-    main(args.sub_id, args.windowed, args.take)
+    main(**vars(_args))
+    core.quit()

@@ -186,6 +186,14 @@ def main(
     assignment = load_assignment_row(csv_path, pid)
     starters = assignment.starters()
     exp_condition = assignment.condition
+    
+    
+    # --- minimal addition: flip for session 2 ---
+    if session == 2 and exp_condition is not None:
+        c = exp_condition.strip().lower()
+        flip = {"persuade": "compromise", "compromise": "persuade"}
+        exp_condition = flip.get(c, exp_condition)  # leave unchanged if unexpected value
+    # -------------------------------------------
 
     first_speaker = pick_first_speaker(
         starters, session=session, session_type="couple"
@@ -271,13 +279,18 @@ def main(
         "• Your role and your partner's role in this conflict\n"
         "• Potential solutions to this conflict\n\n\n"
         "IMPORTANT: During this conversation, \n"
-        "try to PERSUADE the other person of your opinion about how to solve this problem.\n"
+        "try to PERSUADE your partner how to solve this problem.\n"
         "We are studying how persuasion works in the brain.\n"
         "During the conversation, propose your solutions to the conflict\n"
         "and try to convince your partner to agree with YOUR solutions as much as possible.\n"
         "Your goal is to get them to agree with YOUR SOLUTION to this issue.\n\n\n"
         f"You will have {minutes} minute{'s' if minutes != 1 else ''} for this conversation.\n"
-        "A timer will show you how many seconds are left.\n\n\n"
+        "A timer will show you how many seconds are left.\n\n"
+        "During the conversation, only one person can speak at a time.\n" 
+        "When you are speaking, you can press the trackball button \n"
+        "to pass the mic to your partner whenever you are done.\n"
+        "When you are listening, you can press the trackball button\n" 
+         "to take the mic if you want to speak. \n\n\n"
         "Tell the experimenter when you are ready to begin. \n"
         "We will turn off sound in the control room to give you both some privacy.\n"
         "When the scan begins, you’ll first see a fixation cross for 10 seconds.\n"
@@ -300,9 +313,14 @@ def main(
         "We are studying how collaboration works in the brain. \n"
         "During the conversation, work together to identify solutions to the problem\n"
         "and try to reconcile any differences of opinion as much as possible.\n"
-        "Your goal is to find a JOINT SOLUTION to this issue that you both agree on.\n\n\n"
+        "Your goal is to find a JOINT SOLUTION that you both agree on.\n\n\n"
         f"You will have {minutes} minute{'s' if minutes != 1 else ''} for this conversation.\n"
-        "A timer will show you how many seconds are left.\n\n\n"
+        "A timer will show you how many seconds are left.\n\n"
+        "During the conversation, only one person can speak at a time.\n" 
+        "When you are speaking, you can press the trackball button \n"
+        "to pass the mic to your partner whenever you are done.\n"
+        "When you are listening, you can press the trackball button\n" 
+         "to take the mic if you want to speak. \n\n\n"
         "Tell the experimenter when you are ready to begin. \n"
         "We will turn off sound in the control room to give you both some privacy.\n"
         "When the scan begins, you’ll first see a fixation cross for 10 seconds.\n"
@@ -345,7 +363,7 @@ def main(
     event.clearEvents(eventType="keyboard")
     trigger_source: str | None = None
     show_instructions.setText(
-        "Waiting for the scanner to start...\n\n(Do not press anything.)"
+        "Waiting for the scanner to start...\n\n"
     )
 
     while trigger_source is None:
@@ -482,12 +500,14 @@ def main(
                 show_pass.setText("Press trackball button to take the mic.")
                 toggled_role = "listener"
                 event_name = "partner_take"
-
+            
             logger.log_timing(
+                event_name=event_name,      # "partner_pass" or "partner_take"
                 role_label=toggled_role,
                 run_clock=run_clock,
                 phase_clock=comm_clock,
             )
+            
             logger.log_event(
                 event_name=event_name,
                 role_label=toggled_role,
@@ -564,12 +584,15 @@ def main(
                     toggled_role = "speaker"
                     event_name = "take_press"
 
+                
                 logger.log_timing(
-                    role_label=toggled_role,
+                    event_name=event_name,      # "pass_press" or "take_press"
+                    role_label=toggled_role,    # resulting role
                     wall_time=time_here,
                     run_time=run_here,
                     phase_time=comm_here,
                 )
+                
                 logger.log_event(
                     event_name=event_name,
                     role_label=toggled_role,

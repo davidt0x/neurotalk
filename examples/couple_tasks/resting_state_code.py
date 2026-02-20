@@ -13,8 +13,12 @@ from psychopy import core, event, logging, visual
 
 # ----------------- config -----------------
 FULLSCR = True  # fullscreen recommended in scanner
-BG_COLOR = "white"
-FIX_COLOR = "black"
+BG_COLOR = "black"      # ✅ black background
+FIX_COLOR = "white"     # ✅ white fixation
+
+INSTR_COLOR = "white"   # ✅ make instruction text visible on black
+DONE_COLOR  = "white"
+
 FIX_CHAR = "+"
 FIX_HEIGHT_PX = 80  # fixation size (units='pix')
 INSTR_HEIGHT = 32
@@ -42,7 +46,7 @@ instr = visual.TextStim(
         "Keep your eyes open and look at the fixation cross.\n\n"
         "Stay awake and allow your thoughts to flow naturally."
     ),
-    color="black",
+    color=INSTR_COLOR,
     height=INSTR_HEIGHT,
     wrapWidth=INSTR_WRAP_PX,
     alignText="center",
@@ -102,7 +106,7 @@ try:
     logging.exp(f"Resting-state complete (wall {time.time():.3f}).")
 
     # brief end screen
-    done = visual.TextStim(win, text="Done. Thank you!", color="black", height=36)
+    done = visual.TextStim(win, text="Done. Thank you!", color=DONE_COLOR, height=36)
     done.draw()
     win.flip()
     core.wait(1.0)

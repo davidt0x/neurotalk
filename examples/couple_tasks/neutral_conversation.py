@@ -98,6 +98,14 @@ def main(
     starters = assignment.starters()
     exp_condition = assignment.condition
 
+
+    # ---- add this block ----
+    if session == 2 and exp_condition:
+        c = exp_condition.strip().lower()
+        flip = {"persuade": "compromise", "compromise": "persuade"}
+        exp_condition = flip.get(c, exp_condition)  # leave unchanged if unexpected
+    # ------------------------
+    
     discussion_topic = (
         assignment.first_topic if session == 1 else assignment.second_topic
     )
@@ -114,26 +122,40 @@ def main(
 
     persuade_instr_text = (
         "Next, you and your partner will discuss how the charity funds should be allocated.\n"
-        f"You'll focus on how to address: {display_topic}.\n\n\n"
-        "IMPORTANT: During this conversation, try to PERSUADE the other person of your opinion.\n"
-        "We are studying how persuasion works in the brain, so please try to convince the other \n"
-        "person of your opinion as much as possible and get them to understand your perspective.\n"
-        "These instructions are only for you. So, please don't share them with your partner.\n\n\n"
+        f"You'll focus on how to address: {display_topic}.\n\n"
+        "IMPORTANT: During this conversation, try to PERSUADE your partner.\n"
+        "We are studying how persuasion works in the brain, so please try to convince your partner \n"
+        "as much as possible and get them to understand your perspective.\n"
+        "These instructions are only for you. So, please don't share them with your partner.\n\n"
         "You will have 10 minutes for this conversation. \n"
-        "A timer will show you how many seconds are left.\n\n\n"
+        "A timer will show you how many seconds are left.\n\n"
+        
+        "During the conversation, only one person can speak at a time.\n" 
+        "When you are speaking, you can press the trackball button \n"
+        "to pass the mic to your partner whenever you are done.\n"
+        "When you are listening, you can press the trackball button\n" 
+        "to take the mic if you want to speak. \n\n"
+        
         "Tell the experimenter when you are ready to begin.\n"
         "You’ll first see a fixation cross for 10 seconds.\n"
         "After that, you will see instructions to begin the conversation."
     )
     compromise_instr_text = (
         "Next, you and your partner will discuss how the charity funds should be allocated.\n"
-        f"You'll focus on how to address: {display_topic}.\n\n\n"
+        f"You'll focus on how to address: {display_topic}.\n\n"
         "IMPORTANT: During this conversation, try to find a JOINT SOLUTION that you both agree on.\n"
         "We are studying how collaboration works in the brain, so please try to reconcile any \n"
         "differences of opinion as much as possible and look for a shared perspective.\n"
-        "These instructions are only for you. So, please don't share them with your partner.\n\n\n"
+        "These instructions are only for you. So, please don't share them with your partner.\n\n"
         "You will have 10 minutes for this conversation. \n"
-        "A timer will show you how many seconds are left.\n\n\n"
+        "A timer will show you how many seconds are left.\n\n"
+        
+        "During the conversation, only one person can speak at a time.\n" 
+        "When you are speaking, you can press the trackball button \n"
+        "to pass the mic to your partner whenever you are done.\n"
+        "When you are listening, you can press the trackball button\n" 
+        "to take the mic if you want to speak. \n\n"
+         
         "Tell the experimenter when you are ready to begin.\n"
         "You’ll first see a fixation cross for 10 seconds.\n"
         "After that, you will see instructions to begin the conversation."
@@ -353,11 +375,15 @@ def main(
                 show_pass.setText("Press trackball button to take the mic.")
                 toggled_role = "listener"
                 event_name = "partner_take"
+
+            
             logger.log_timing(
+                event_name=event_name,      # "partner_pass" or "partner_take"
                 role_label=toggled_role,
                 run_clock=run_clock,
                 phase_clock=comm_clock,
             )
+            
             logger.log_event(
                 event_name=event_name,
                 role_label=toggled_role,
@@ -435,8 +461,10 @@ def main(
                     toggled_role = "speaker"
                     event_name = "take_press"
 
+    
                 logger.log_timing(
-                    role_label=toggled_role,
+                    event_name=event_name,      # "pass_press" or "take_press"
+                    role_label=toggled_role,    # resulting role
                     wall_time=time_here,
                     run_time=run_here,
                     phase_time=comm_here,

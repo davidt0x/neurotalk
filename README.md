@@ -85,7 +85,7 @@ The repository uses [uv](https://github.com/astral-sh/uv) for dependency and
 tool management:
 
 ```bash
-uv sync
+uv sync                    # --all-extras for optional dependencies
 uv run pytest              # or: uv run pytest tests/test_session_core.py
 uvx ruff check src tests
 uvx mypy src tests
