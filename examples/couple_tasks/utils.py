@@ -62,6 +62,8 @@ def finalize_and_quit(
         core.quit()
 
         os.system('DisplaySwitch.exe /extend')
+        print("Turn Extended Display On")
+        core.wait(3)
 
 
 def decode_pid(pid_str: str) -> tuple[int, str]:
