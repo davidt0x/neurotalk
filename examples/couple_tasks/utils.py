@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import csv
 import re
+import os
+
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -58,6 +60,8 @@ def finalize_and_quit(
         logger.save_and_close()
         win.close()
         core.quit()
+
+        os.system('DisplaySwitch.exe /extend')
 
 
 def decode_pid(pid_str: str) -> tuple[int, str]:
@@ -216,6 +220,10 @@ def create_window(
     color: str = "black",
     units: str = "norm",
 ):
+    
+    os.system('DisplaySwitch.exe /clone')
+    core.wait(3)
+
     mon = make_monitor(scanner)
     win = visual.Window(
         size=size,
