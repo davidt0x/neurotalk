@@ -32,8 +32,11 @@ classifiers = [
 dynamic = ["version"]
 dependencies = [
   'sounddevice',
-  # Cap numpy below 2.3 so SciPy wheels resolve (needed for psychopy extra).
-  'numpy >=1.20,<2.3',
+  # NumPy 2.2 does not support Python 3.14; keep the older cap on <=3.13 so
+  # the Psychopy/SciPy stack continues to resolve there, but allow a 3.14-capable
+  # NumPy on newer interpreters.
+  'numpy >=1.20,<2.3; python_version < "3.14"',
+  'numpy >=2.3,<3; python_version >= "3.14"',
   'pyyaml >=6',
   'rich >=13',
 ]
