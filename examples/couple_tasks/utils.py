@@ -49,14 +49,14 @@ def finalize_and_quit(
                 export_dir = recording_dir / "segments"
                 conv_session.export_segments(export_dir)
             except Exception as exc:  # pragma: no cover - best-effort shutdown
-                logging.error("Failed to export segments: %s", exc)
+                logging.error(f"Failed to export segments: {exc}")
             if mixdown:
                 try:
                     mix_path = conv_session.export_mix_track()
                     if mix_path:
-                        logging.info("Mixed audio written to %s", mix_path)
+                        logging.info(f"Mixed audio written to {mix_path}")
                 except Exception as exc:  # pragma: no cover - best-effort shutdown
-                    logging.error("Failed to generate mix track: %s", exc)
+                    logging.error(f"Failed to generate mix track: {exc}")
     finally:
         logger.save_and_close()
         win.close()
@@ -68,7 +68,7 @@ def finalize_and_quit(
 def has_multiple_displays() -> bool:
     """Return True when Windows reports at least two monitors attached to the desktop."""
     if os.name != "nt":
-        logging.info("Display switching skipped: non-Windows platform (%s).", os.name)
+        logging.info(f"Display switching skipped: non-Windows platform ({os.name}).")
         return False
 
     windll = getattr(ctypes, "windll", None)
@@ -79,14 +79,11 @@ def has_multiple_displays() -> bool:
     try:
         monitor_count = int(windll.user32.GetSystemMetrics(80))
     except Exception as exc:  # pragma: no cover - best-effort display probe
-        logging.error("Failed to detect monitor count: %s", exc)
+        logging.error(f"Failed to detect monitor count: {exc}")
         return False
 
     if monitor_count < 2:
-        logging.info(
-            "Display switching skipped: only %s monitor detected.",
-            monitor_count,
-        )
+        logging.info(f"Display switching skipped: only {monitor_count} monitor detected.")
         return False
 
     return True
@@ -103,7 +100,7 @@ def switch_display_mode(mode: str) -> bool:
     """
     normalized_mode = mode.lower()
     if normalized_mode not in {"clone", "extend"}:
-        logging.error("Unsupported display mode requested: %s", mode)
+        logging.error(f"Unsupported display mode requested: {mode}")
         return False
 
     if normalized_mode == "clone" and not has_multiple_displays():
@@ -113,18 +110,16 @@ def switch_display_mode(mode: str) -> bool:
     try:
         result = subprocess.run(command, check=False)
     except Exception as exc:  # pragma: no cover - best-effort display reset
-        logging.error("DisplaySwitch command failed: %s (%s)", command, exc)
+        logging.error(f"DisplaySwitch command failed: {command} ({exc})")
         return False
 
     if result.returncode != 0:
         logging.error(
-            "DisplaySwitch command failed with code %s: %s",
-            result.returncode,
-            command,
+            f"DisplaySwitch command failed with code {result.returncode}: {command}"
         )
         return False
 
-    logging.info("Display mode switched: %s", normalized_mode)
+    logging.info(f"Display mode switched: {normalized_mode}")
     return True
 
 

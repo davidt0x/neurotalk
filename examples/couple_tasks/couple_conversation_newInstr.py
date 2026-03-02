@@ -252,7 +252,7 @@ def main(
     show_sync.setAutoDraw(True)
     win.flip()
     instr_sync_time = conv_session.sync_start(SYNC_START_LAG)
-    logging.info("Pre-instruction sync ready at %s", instr_sync_time)
+    logging.info(f"Pre-instruction sync ready at {instr_sync_time}")
     while True:
         now = time.time()
         if now >= instr_sync_time:
@@ -399,7 +399,7 @@ def main(
 
     show_blank.setAutoDraw(True)
     win.flip()
-    logging.info("Starting pre-conversation blank for %.1fs", INSTR_BLANK_S)
+    logging.info(f"Starting pre-conversation blank for {INSTR_BLANK_S:.1f}s")
     logger.log_timing(
         role_label="blank_start",
         run_clock=run_clock,

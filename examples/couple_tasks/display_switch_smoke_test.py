@@ -37,8 +37,7 @@ def main(*, hold_seconds: float) -> None:
 
     try:
         logging.info(
-            "Display is in clone mode. Holding for %.1f seconds before restoring.",
-            hold_seconds,
+            f"Display is in clone mode. Holding for {hold_seconds:.1f} seconds before restoring."
         )
         core.wait(hold_seconds)
     finally:
