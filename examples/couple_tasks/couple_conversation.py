@@ -567,10 +567,27 @@ def main(
 
             if key == KEY_PASS:
                 time_here = time.time()
-                if time_here < next_turn_change_allowed_at:
-                    continue
                 run_here = run_clock.getTime()
                 comm_here = comm_clock.getTime()
+                if time_here < next_turn_change_allowed_at:
+                    blocked_role = "speaker" if turn_manager.is_speaker else "listener"
+                    blocked_event_name = (
+                        "pass_block" if turn_manager.is_speaker else "take_block"
+                    )
+                    logger.log_timing(
+                        event_name=blocked_event_name,
+                        role_label=blocked_role,
+                        wall_time=time_here,
+                        run_time=run_here,
+                        phase_time=comm_here,
+                    )
+                    logger.log_event(
+                        event_name=blocked_event_name,
+                        role_label=blocked_role,
+                        run_clock=run_clock,
+                        phase_clock=comm_clock,
+                    )
+                    continue
 
                 if turn_manager.is_speaker:
                     turn_manager.pass_turn(
