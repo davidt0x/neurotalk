@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import csv
-import re
+import ctypes
 import os
-
+import re
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -59,11 +60,60 @@ def finalize_and_quit(
     finally:
         logger.save_and_close()
         win.close()
+        if switch_display_mode("extend"):
+            core.wait(3)
         core.quit()
 
-        os.system('DisplaySwitch.exe /extend')
-        print("Turn Extended Display On")
-        core.wait(3)
+
+def has_multiple_displays() -> bool:
+    """Return True when Windows reports at least two attached monitors."""
+    if os.name != "nt":
+        logging.info("Display switching skipped: non-Windows platform (%s).", os.name)
+        return False
+
+    windll = getattr(ctypes, "windll", None)
+    if windll is None:
+        logging.info("Display switching skipped: Windows API access unavailable.")
+        return False
+
+    try:
+        monitor_count = int(windll.user32.GetSystemMetrics(80))
+    except Exception as exc:  # pragma: no cover - best-effort display probe
+        logging.error("Failed to detect monitor count: %s", exc)
+        return False
+
+    if monitor_count < 2:
+        logging.info(
+            "Display switching skipped: only %s monitor detected.",
+            monitor_count,
+        )
+        return False
+
+    return True
+
+
+def switch_display_mode(mode: str) -> bool:
+    """Run DisplaySwitch for the requested mode when multiple monitors are available."""
+    if not has_multiple_displays():
+        return False
+
+    command = ["DisplaySwitch.exe", f"/{mode}"]
+    try:
+        result = subprocess.run(command, check=False)
+    except Exception as exc:  # pragma: no cover - best-effort display reset
+        logging.error("DisplaySwitch command failed: %s (%s)", command, exc)
+        return False
+
+    if result.returncode != 0:
+        logging.error(
+            "DisplaySwitch command failed with code %s: %s",
+            result.returncode,
+            command,
+        )
+        return False
+
+    logging.info("Display mode switched: %s", mode)
+    return True
 
 
 def decode_pid(pid_str: str) -> tuple[int, str]:
@@ -222,9 +272,8 @@ def create_window(
     color: str = "black",
     units: str = "norm",
 ):
-    
-    os.system('DisplaySwitch.exe /clone')
-    core.wait(3)
+    if switch_display_mode("clone"):
+        core.wait(3)
 
     mon = make_monitor(scanner)
     win = visual.Window(
