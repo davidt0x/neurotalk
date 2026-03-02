@@ -10,6 +10,8 @@ from pathlib import Path
 
 from psychopy import core, logging, monitors, visual  # type: ignore[import-not-found]
 
+DISPLAY_SWITCH_SETTLE_S = 3.0
+
 
 @dataclass(frozen=True)
 class AssignmentRow:
@@ -278,9 +280,21 @@ def create_window(
     screen: int = 0,
     color: str = "black",
     units: str = "norm",
+    settle_seconds: float | None = None,
 ):
-    if switch_display_mode("clone"):
-        core.wait(3)
+    """
+    Create the PsychoPy window after any optional display-mode change.
+
+    When ``settle_seconds`` is provided, the function always waits that long after
+    attempting the clone switch. This keeps paired tasks on machines with
+    different display setups on the same startup timeline.
+    """
+    switched = switch_display_mode("clone")
+    wait_seconds = DISPLAY_SWITCH_SETTLE_S if switched else 0.0
+    if settle_seconds is not None:
+        wait_seconds = max(0.0, float(settle_seconds))
+    if wait_seconds > 0:
+        core.wait(wait_seconds)
 
     mon = make_monitor(scanner)
     win = visual.Window(

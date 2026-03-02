@@ -138,7 +138,13 @@ def main(
     level_value = getattr(logging, level_name, logging.WARNING)
     logging.console.setLevel(level_value)
 
-    win = create_window(scanner=scanner, size=WIN_SIZE, fullscr=fullscr, screen=display)
+    win = create_window(
+        scanner=scanner,
+        size=WIN_SIZE,
+        fullscr=fullscr,
+        screen=display,
+        settle_seconds=3.0,
+    )
     make_text = text_factory(win, letter_height=LETTER_H, wrap_width=WRAP_W)
 
     # Trackball: treated as a standard mouse
