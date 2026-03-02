@@ -66,7 +66,7 @@ def finalize_and_quit(
 
 
 def has_multiple_displays() -> bool:
-    """Return True when Windows reports at least two attached monitors."""
+    """Return True when Windows reports at least two monitors attached to the desktop."""
     if os.name != "nt":
         logging.info("Display switching skipped: non-Windows platform (%s).", os.name)
         return False
@@ -93,11 +93,23 @@ def has_multiple_displays() -> bool:
 
 
 def switch_display_mode(mode: str) -> bool:
-    """Run DisplaySwitch for the requested mode when multiple monitors are available."""
-    if not has_multiple_displays():
+    """
+    Run DisplaySwitch for the requested mode on Windows.
+
+    The multiple-display pre-check is only applied for ``clone``. Once Windows is
+    already in duplicate mode, it can report a single monitor attached to the
+    desktop, which would incorrectly block the ``extend`` call that restores the
+    original layout.
+    """
+    normalized_mode = mode.lower()
+    if normalized_mode not in {"clone", "extend"}:
+        logging.error("Unsupported display mode requested: %s", mode)
         return False
 
-    command = ["DisplaySwitch.exe", f"/{mode}"]
+    if normalized_mode == "clone" and not has_multiple_displays():
+        return False
+
+    command = ["DisplaySwitch.exe", f"/{normalized_mode}"]
     try:
         result = subprocess.run(command, check=False)
     except Exception as exc:  # pragma: no cover - best-effort display reset
@@ -112,7 +124,7 @@ def switch_display_mode(mode: str) -> bool:
         )
         return False
 
-    logging.info("Display mode switched: %s", mode)
+    logging.info("Display mode switched: %s", normalized_mode)
     return True
 
 
