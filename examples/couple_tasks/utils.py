@@ -85,7 +85,9 @@ def has_multiple_displays() -> bool:
         return False
 
     if monitor_count < 2:
-        logging.info(f"Display switching skipped: only {monitor_count} monitor detected.")
+        logging.info(
+            f"Display switching skipped: only {monitor_count} monitor detected."
+        )
         return False
 
     return True
