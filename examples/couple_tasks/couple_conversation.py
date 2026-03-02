@@ -72,6 +72,88 @@ CSV_FILENAME = "participant_counterbalancing.csv"
 SESSION_TYPE = "couple"  # fixed for this task
 
 
+def show_pages_from_delim(
+    *,
+    win,
+    text_stim,
+    full_text: str,
+    trackball,
+    delim: str = "\n\n\n",
+    advance_key: str = KEY_PASS,
+    quit_key: str = KEY_QUIT,
+    allow_trackball_back: bool = False,
+    back_button_index: int = 2,
+):
+    """
+    Split full_text into pages on delim and show one page at a time.
+    Advance with either:
+      - keyboard advance_key (e.g., '1')
+      - trackball left-click (debounced)
+    Optionally allow right-click back navigation.
+    """
+    pages = [p.strip() for p in (full_text or "").split(delim)]
+    pages = [p for p in pages if p] or [""]
+
+    last_advance_pressed = False  # debounce left button
+    last_back_pressed = False  # debounce right button
+    page_idx = 0
+
+    while page_idx < len(pages):
+        page = pages[page_idx]
+        footer = f"\n\n\nPress the trackball button to continue. (Page {page_idx + 1}/{len(pages)})"
+        if allow_trackball_back:
+            footer = footer.replace(
+                "Press the trackball button to continue.",
+                "Press the trackball button to continue. Right-click to go back.",
+            )
+        text_stim.setText(page + footer)
+
+        event.clearEvents(eventType="keyboard")
+
+        while True:
+            text_stim.draw()
+            win.flip()
+
+            # quit
+            keys = event.getKeys([advance_key, quit_key])
+            if quit_key in keys:
+                return "quit"
+
+            # keyboard advance
+            if advance_key in keys:
+                core.wait(0.15)  # prevent auto-repeat skipping pages
+                event.clearEvents(eventType="keyboard")
+                page_idx += 1
+                break
+
+            # Trackball buttons are [left, middle, right].
+            buttons = trackball.getPressed()
+            advance_pressed_now = bool(buttons[0])
+            back_pressed_now = (
+                bool(buttons[back_button_index])
+                if allow_trackball_back and len(buttons) > back_button_index
+                else False
+            )
+
+            advance_edge = advance_pressed_now and not last_advance_pressed
+            back_edge = back_pressed_now and not last_back_pressed
+            last_advance_pressed = advance_pressed_now
+            last_back_pressed = back_pressed_now
+
+            if advance_edge:
+                core.wait(0.15)  # prevent double-advance
+                page_idx += 1
+                break
+            if back_edge:
+                core.wait(0.15)
+                page_idx = max(0, page_idx - 1)
+                break
+
+            core.wait(0.01)
+
+    return "done"
+
+
 # ----------------------------------------------------
 def main(
     *,
@@ -104,6 +186,15 @@ def main(
     assignment = load_assignment_row(csv_path, pid)
     starters = assignment.starters()
     exp_condition = assignment.condition
+
+    # --- minimal addition: flip for session 2 ---
+    if session == 2 and exp_condition is not None:
+        c = exp_condition.strip().lower()
+        flip = {"persuade": "compromise", "compromise": "persuade"}
+        exp_condition = flip.get(
+            c, exp_condition
+        )  # leave unchanged if unexpected value
+    # -------------------------------------------
 
     first_speaker = pick_first_speaker(
         starters, session=session, session_type="couple"
@@ -184,30 +275,62 @@ def main(
     minutes = round(COMM_S / 60.0)
 
     persuade_instr_text_couple = (
-        "Next, you will discuss a problem area in your relationship with your partner.\n"
-        f"Please discuss the following problem area: {conflict_text.upper()}.\n\n\n"
-        "IMPORTANT: During this conversation, try to PERSUADE the other person of your opinion.\n"
-        "We are studying how persuasion works in the brain, so please try to convince the other\n"
-        "person of your opinion as much as possible and get them to understand your perspective.\n"
-        "These instructions are only for you. So, please don't share them with your partner.\n\n\n"
+        "In this task, we’d like you to have a conversation about a significant, \n"
+        "unresolved conflict or tension in your relationship. \n"
+        "Based on your and your partner’s survey responses about your relationship, \n"
+        f"we have selected the following conflict area: {conflict_text.upper()}.\n\n\n"
+        "Before the conversation, think about the following: \n\n"
+        "• What the conflict is about\n"
+        "• A concrete example of when this issue makes you upset\n"
+        "• The causes of this issue\n"
+        "• Your role and your partner's role in this conflict\n"
+        "• Potential solutions to this conflict\n\n\n"
+        "IMPORTANT: During this conversation, \n"
+        "try to PERSUADE your partner how to solve this problem.\n"
+        "We are studying how persuasion works in the brain.\n"
+        "During the conversation, propose your solutions to the conflict\n"
+        "and try to convince your partner to agree with YOUR solutions as much as possible.\n"
+        "Your goal is to get them to agree with YOUR SOLUTION to this issue.\n\n\n"
         f"You will have {minutes} minute{'s' if minutes != 1 else ''} for this conversation.\n"
-        "A timer will show you how many seconds are left.\n\n\n"
-        "Tell the experimenter when you are ready to begin.\n"
-        "You’ll first see a fixation cross for 10 seconds.\n"
+        "A timer will show you how many seconds are left.\n\n"
+        "During the conversation, only one person can speak at a time.\n"
+        "When you are speaking, you can press the trackball button \n"
+        "to pass the mic to your partner whenever you are done.\n"
+        "When you are listening, you can press the trackball button\n"
+        "to take the mic if you want to speak. \n\n\n"
+        "Tell the experimenter when you are ready to begin. \n"
+        "We will turn off sound in the control room to give you both some privacy.\n"
+        "When the scan begins, you’ll first see a fixation cross for 10 seconds.\n"
         "After that, you will see instructions to begin the conversation."
     )
 
     compromise_instr_text_couple = (
-        "Next, you will discuss a problem area in your relationship with your partner.\n"
-        f"Please discuss the following problem area: {conflict_text.upper()}.\n\n\n"
-        "IMPORTANT: During this conversation, try to find a JOINT SOLUTION that you both agree on.\n"
-        "We are studying how collaboration works in the brain, so please try to reconcile any\n"
-        "differences of opinion as much as possible and look for a shared perspective.\n"
-        "These instructions are only for you. So, please don't share them with your partner.\n\n\n"
+        "In this task, we’d like you to have a conversation about a significant, \n"
+        "unresolved conflict or tension in your relationship. \n"
+        "Based on your and your partner’s survey responses about your relationship, \n"
+        f"we have selected the following conflict area: {conflict_text.upper()}.\n\n\n"
+        "Before the conversation, think about the following: \n\n"
+        "• What the conflict is about\n"
+        "• A concrete example of when this issue makes you upset\n"
+        "• The causes of this issue\n"
+        "• Your role and your partner's role in this conflict\n"
+        "• Potential solutions to this conflict\n\n\n"
+        "IMPORTANT: During this conversation,\n"
+        "try to COMPROMISE with your partner about how to solve this problem.\n"
+        "We are studying how collaboration works in the brain. \n"
+        "During the conversation, work together to identify solutions to the problem\n"
+        "and try to reconcile any differences of opinion as much as possible.\n"
+        "Your goal is to find a JOINT SOLUTION that you both agree on.\n\n\n"
         f"You will have {minutes} minute{'s' if minutes != 1 else ''} for this conversation.\n"
-        "A timer will show you how many seconds are left.\n\n\n"
-        "Tell the experimenter when you are ready to begin.\n"
-        "You’ll first see a fixation cross for 10 seconds.\n"
+        "A timer will show you how many seconds are left.\n\n"
+        "During the conversation, only one person can speak at a time.\n"
+        "When you are speaking, you can press the trackball button \n"
+        "to pass the mic to your partner whenever you are done.\n"
+        "When you are listening, you can press the trackball button\n"
+        "to take the mic if you want to speak. \n\n\n"
+        "Tell the experimenter when you are ready to begin. \n"
+        "We will turn off sound in the control room to give you both some privacy.\n"
+        "When the scan begins, you’ll first see a fixation cross for 10 seconds.\n"
         "After that, you will see instructions to begin the conversation."
     )
 
@@ -228,9 +351,26 @@ def main(
     )
 
     event.clearEvents(eventType="keyboard")
-    show_instructions.setText(instr_text)
+    # Show instructions as pages (split on "\n\n\n"), advance with same pass control as the task
+    result = show_pages_from_delim(
+        win=win,
+        text_stim=show_instructions,
+        full_text=instr_text,
+        trackball=trackball,
+        delim="\n\n\n",
+        advance_key=KEY_PASS,
+        quit_key=KEY_QUIT,
+        allow_trackball_back=True,
+    )
+    if result == "quit":
+        finalize_and_quit(conv_session, recording_dir, logger, mixdown, win)
+        return
 
+    # Now wait for TTL trigger (same as before)
+    event.clearEvents(eventType="keyboard")
     trigger_source: str | None = None
+    show_instructions.setText("Waiting for the scanner to start...\n\n")
+
     while trigger_source is None:
         show_instructions.draw()
         win.flip()
@@ -367,10 +507,12 @@ def main(
                 event_name = "partner_take"
 
             logger.log_timing(
+                event_name=event_name,  # "partner_pass" or "partner_take"
                 role_label=toggled_role,
                 run_clock=run_clock,
                 phase_clock=comm_clock,
             )
+
             logger.log_event(
                 event_name=event_name,
                 role_label=toggled_role,
@@ -448,11 +590,13 @@ def main(
                     event_name = "take_press"
 
                 logger.log_timing(
-                    role_label=toggled_role,
+                    event_name=event_name,  # "pass_press" or "take_press"
+                    role_label=toggled_role,  # resulting role
                     wall_time=time_here,
                     run_time=run_here,
                     phase_time=comm_here,
                 )
+
                 logger.log_event(
                     event_name=event_name,
                     role_label=toggled_role,
