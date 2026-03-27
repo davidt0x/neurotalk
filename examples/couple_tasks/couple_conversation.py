@@ -59,7 +59,7 @@ RECORDING_LABEL = "couple_conversation"
 INSTR_BLANK_S = 10.0  # blank after instruction/trigger, before conversation UI
 COMM_S = 600.0
 SYNC_START_LAG = 12.0  # lead-in before instructions to sync presentation timing
-PASS_REFRACTORY_S = 0.5  # ignore pass/take requests for a brief lockout window
+PASS_REFRACTORY_S = 1  # ignore pass/take requests for a brief lockout window
 
 KEY_PASS = "1"
 KEY_QUIT = "escape"

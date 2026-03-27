@@ -50,7 +50,7 @@ INTRO_S = 10.0  # intro dwell before communication
 COMM_S = 600.0  # communication phase duration (s)
 SYNC_START_LAG = 12.0  # lead-in before instructions to sync timing
 RECORDING_LABEL = "neutral_conversation"
-PASS_REFRACTORY_S = 0.5  # ignore pass/take requests for a brief lockout window
+PASS_REFRACTORY_S = 1  # ignore pass/take requests for a brief lockout window
 
 KEY_PASS = "1"
 KEY_QUIT = "escape"
@@ -140,8 +140,8 @@ def main(
     compromise_instr_text = (
         "Next, you and your partner will discuss how the charity funds should be allocated.\n"
         f"You'll focus on how to address: {display_topic}.\n\n"
-        "IMPORTANT: During this conversation, try to find a JOINT SOLUTION that you both agree on.\n"
-        "We are studying how collaboration works in the brain, so please try to reconcile any \n"
+        "IMPORTANT: During this conversation, find a JOINT SOLUTION that you both agree on.\n"
+        "We are studying how collaboration works in the brain, so please reconcile any\n"
         "differences of opinion as much as possible and look for a shared perspective.\n"
         "These instructions are only for you. So, please don't share them with your partner.\n\n"
         "You will have 10 minutes for this conversation. \n"
@@ -209,6 +209,7 @@ def main(
     next_turn_change_allowed_at = 0.0
 
     show_instructions = make_text(text="")
+    show_instructions.height = 0.06
     show_sync = make_text(text="Syncing start time with your partner...")
     show_role_txt = make_text(text="", pos=(0, 0.65))
     show_pass = make_text(text="", pos=(0, 0.05))
