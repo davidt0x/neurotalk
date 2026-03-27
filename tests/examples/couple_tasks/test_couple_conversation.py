@@ -51,3 +51,27 @@ def test_load_assignment_row_reads_csv(tmp_path):
     assert row.first_topic is None
     with pytest.raises(KeyError):
         utils.load_assignment_row(str(csv_path), "999")
+
+
+def test_close_window_and_restore_display_waits_after_extend(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    events: list[str] = []
+
+    class DummyWindow:
+        def close(self) -> None:
+            events.append("close")
+
+    def fake_switch(mode: str) -> bool:
+        events.append(f"switch:{mode}")
+        return True
+
+    def fake_wait(seconds: float) -> None:
+        events.append(f"wait:{seconds}")
+
+    monkeypatch.setattr(utils, "switch_display_mode", fake_switch)
+    monkeypatch.setattr(utils.core, "wait", fake_wait)
+
+    utils.close_window_and_restore_display(DummyWindow(), settle_seconds=1.5)
+
+    assert events == ["close", "switch:extend", "wait:1.5"]

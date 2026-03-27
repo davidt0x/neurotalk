@@ -61,10 +61,19 @@ def finalize_and_quit(
                     logging.error(f"Failed to generate mix track: {exc}")
     finally:
         logger.save_and_close()
-        win.close()
-        if switch_display_mode("extend"):
-            core.wait(3)
+        close_window_and_restore_display(win)
         core.quit()
+
+
+def close_window_and_restore_display(
+    win,
+    *,
+    settle_seconds: float = DISPLAY_SWITCH_SETTLE_S,
+) -> None:
+    """Close the task window and restore the prior extended-desktop layout."""
+    win.close()
+    if switch_display_mode("extend"):
+        core.wait(settle_seconds)
 
 
 def has_multiple_displays() -> bool:

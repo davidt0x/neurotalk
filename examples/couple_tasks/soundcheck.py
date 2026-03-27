@@ -17,12 +17,15 @@ from psychopy import core  # type: ignore[import-not-found]
 from psychopy import logging as pylogging
 
 if __package__:
-    from .utils import create_window
+    from .utils import close_window_and_restore_display, create_window
 else:  # pragma: no cover - script-mode support
     import sys
 
     sys.path.append(str(Path(__file__).resolve().parents[1]))
-    from couple_tasks.utils import create_window  # type: ignore[import-not-found]
+    from couple_tasks.utils import (  # type: ignore[import-not-found]
+        close_window_and_restore_display,
+        create_window,
+    )
 
 from neurotalk.config import SessionConfig
 from neurotalk.config_cli import add_config_arguments, load_config_from_args
@@ -86,7 +89,7 @@ def main(
         if conv_session is not None:
             conv_session.close()
         if win is not None:
-            win.close()
+            close_window_and_restore_display(win)
         core.quit()
 
 

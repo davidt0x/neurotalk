@@ -8,10 +8,12 @@ Edited: ZZ October 27, 2025
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 
 from psychopy import core, event, logging, monitors, sound, visual
 
 WIN_SIZE = (1920, 1080)
+STIMULUS_PATH = Path(__file__).resolve().with_name("black_audio.ogg")
 
 # Prefer the pygame backend
 if "pygame" in sound.Sound.getBackends():
@@ -110,7 +112,7 @@ def main(
     wrap_w = 1.6
 
     # set up PsychoPy components
-    aud_clip = sound.Sound("black_audio.ogg")
+    aud_clip = sound.Sound(str(STIMULUS_PATH))
     logging.info(f"Audio duration: {aud_clip.getDuration()} seconds")  # ty:ignore[unresolved-attribute]
     logging.flush()
 

@@ -20,6 +20,7 @@ from psychopy import core, event, logging
 if __package__:
     from .log import TaskLogger
     from .utils import (
+        close_window_and_restore_display,
         create_window,
         decode_pid,
         load_assignment_row,
@@ -33,6 +34,7 @@ else:  # pragma: no cover - script-mode support
     sys.path.append(str(Path(__file__).resolve().parents[1]))
     from couple_tasks.log import TaskLogger  # type: ignore[import-not-found]
     from couple_tasks.utils import (  # type: ignore[import-not-found]
+        close_window_and_restore_display,
         create_window,
         decode_pid,
         load_assignment_row,
@@ -117,7 +119,7 @@ def main(
         if audio_data is not None:
             sd.stop()
         logger.close()
-        win.close()
+        close_window_and_restore_display(win)
         core.quit()
 
     show_instructions = make_text(text="")
@@ -270,7 +272,7 @@ def main(
             wf.writeframes(audio_data.tobytes())
 
     logger.save_and_close()
-    win.close()
+    close_window_and_restore_display(win)
     core.quit()
 
 
