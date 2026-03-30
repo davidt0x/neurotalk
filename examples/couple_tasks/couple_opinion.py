@@ -131,7 +131,7 @@ def main(
     instr = (
         f"In the last task, you discussed {conflict_text.upper()} with your partner.\n\n\n"
         f"Next, we would like you to report your own personal opinion on {conflict_text.upper()}.\n"
-        "For N minutes, please speak aloud \n"
+        "For 2 minutes, please speak aloud \n"
         "whatever you can about your thoughts and feelings on the topic.\n\n\n"
         "This recording is confidential.\n"
         "The experimenter has muted the audio, and what you say now will\n"
