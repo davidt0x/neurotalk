@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import wave
+from datetime import datetime
 
 import numpy as np
 import pandas as pd
@@ -82,7 +83,10 @@ class EscapeHandler:
 
 
 def main(sub_id: str, scanner: str, fullscreen: bool, take: int | None = None) -> None:
-    file_name = f"sub-{sub_id}_task-reading_audio.wav"
+    datet = datetime.now()
+    date_str = datet.strftime("%Y%m%d_%H%M%S")
+
+    file_name = f"sub-{sub_id}_task-reading_audio_{date_str}.wav"
     audio_data = np.zeros((0, CHANNELS), dtype=DTYPE)
     handler = EscapeHandler()
 
@@ -98,9 +102,9 @@ def main(sub_id: str, scanner: str, fullscreen: bool, take: int | None = None) -
     run_clock = core.Clock()
     logging.setDefaultClock(run_clock)
     logging.console.setLevel(logging.WARN)
-    logging.LogFile(
-        f"sub-{sub_id}_task-reading_psychopy.log", level=logging.INFO, filemode="w"
-    )
+
+    filename = f"sub-{sub_id}_task-reading_psycophy_{date_str}.log"
+    logging.LogFile(filename, level=logging.INFO, filemode="w")
 
     logging.info("Starting")
     instructions = """

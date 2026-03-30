@@ -8,6 +8,7 @@ Edited: ZZ October 27, 2025
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
 from pathlib import Path
 
 from psychopy import core, event, logging, monitors, sound, visual
@@ -99,7 +100,9 @@ def main(
     fullscreen: bool,
     fixation_duration: int = 10,
 ):
-    filename = f"sub-{sub_id}_task-listening_psycophy.log"
+    datet = datetime.now()
+    date_str = datet.strftime("%Y%m%d_%H%M%S")
+    filename = f"sub-{sub_id}_task-listening_psycophy_{date_str}.log"
     logging.LogFile(filename, level=logging.INFO, filemode="w")
 
     run_clock = core.Clock()
