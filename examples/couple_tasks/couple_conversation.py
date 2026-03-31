@@ -420,9 +420,7 @@ def main(
                     )
                     event.clearEvents(eventType="keyboard")
                 if KEY_QUIT in keys:
-                    finalize_and_quit(
-                        conv_session, recording_dir, logger, mixdown, win
-                    )
+                    finalize_and_quit(conv_session, recording_dir, logger, mixdown, win)
                     return
             win.flip()
             core.wait(0.01)

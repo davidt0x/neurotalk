@@ -19,7 +19,9 @@ from neurotalk.session import (
 )
 
 
-def make_bundle() -> tuple[SocketBundle, tuple[socket.socket, socket.socket, socket.socket]]:
+def make_bundle() -> tuple[
+    SocketBundle, tuple[socket.socket, socket.socket, socket.socket]
+]:
     inbound_local = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     outbound_local = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     control_local = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)

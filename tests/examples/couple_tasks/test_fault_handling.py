@@ -4,27 +4,36 @@ import importlib
 import sys
 import types
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
-from neurotalk.config import RecordingConfig, SessionConfig
-from neurotalk.session import SessionFault, SessionFaultError, SessionFaultSource
-
 ROOT = Path(__file__).resolve().parents[3]
+SRC = ROOT / "src"
 if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))
+if str(SRC) not in sys.path:
+    sys.path.append(str(SRC))
+
+config_module = cast(Any, importlib.import_module("neurotalk.config"))
+session_module = cast(Any, importlib.import_module("neurotalk.session"))
+RecordingConfig = config_module.RecordingConfig
+SessionConfig = config_module.SessionConfig
+SessionFault = session_module.SessionFault
+SessionFaultError = session_module.SessionFaultError
+SessionFaultSource = session_module.SessionFaultSource
 
 
 def install_fake_psychopy(
     monkeypatch: pytest.MonkeyPatch, *, quit_calls: list[str]
 ) -> None:
-    psychopy = types.ModuleType("psychopy")
-    core = types.ModuleType("psychopy.core")
-    data = types.ModuleType("psychopy.data")
-    event = types.ModuleType("psychopy.event")
-    logging_mod = types.ModuleType("psychopy.logging")
-    monitors = types.ModuleType("psychopy.monitors")
-    visual = types.ModuleType("psychopy.visual")
+    psychopy = cast(Any, types.ModuleType("psychopy"))
+    core = cast(Any, types.ModuleType("psychopy.core"))
+    data = cast(Any, types.ModuleType("psychopy.data"))
+    event = cast(Any, types.ModuleType("psychopy.event"))
+    logging_mod = cast(Any, types.ModuleType("psychopy.logging"))
+    monitors = cast(Any, types.ModuleType("psychopy.monitors"))
+    visual = cast(Any, types.ModuleType("psychopy.visual"))
 
     class DummyClock:
         def getTime(self) -> float:
@@ -133,20 +142,7 @@ class DummyLogger:
         self.saved = True
 
 
-@pytest.mark.parametrize(
-    ("module_name", "extra_kwargs"),
-    [
-        (
-            "examples.couple_tasks.neutral_conversation",
-            {"session": 1, "csv_path": Path("assign.csv")},
-        ),
-        (
-            "examples.couple_tasks.couple_conversation",
-            {"session": 1, "conflict": "tuition", "csv_path": Path("assign.csv")},
-        ),
-    ],
-)
-def test_conversation_tasks_log_and_cleanup_on_session_fault(
+def assert_conversation_task_fault_handling(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     module_name: str,
@@ -154,7 +150,9 @@ def test_conversation_tasks_log_and_cleanup_on_session_fault(
 ) -> None:
     module = import_couple_task_module(monkeypatch, module_name, quit_calls=[])
     errors: list[str] = []
-    finalize_calls: list[tuple[object | None, Path, DummyLogger | None, bool, object | None]] = []
+    finalize_calls: list[
+        tuple[object | None, Path, DummyLogger | None, bool, object | None]
+    ] = []
 
     class FailingSession:
         def __init__(self, *args, **kwargs) -> None:
@@ -181,9 +179,7 @@ def test_conversation_tasks_log_and_cleanup_on_session_fault(
     monkeypatch.setattr(
         module.py_logging,
         "error",
-        lambda message, *args: errors.append(
-            message % args if args else str(message)
-        ),
+        lambda message, *args: errors.append(message % args if args else str(message)),
     )
 
     cfg = SessionConfig(
@@ -208,6 +204,28 @@ def test_conversation_tasks_log_and_cleanup_on_session_fault(
     assert isinstance(logger, DummyLogger)
     assert mixdown is False
     assert win is None
+
+
+def test_neutral_conversation_logs_and_cleans_up_on_session_fault(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert_conversation_task_fault_handling(
+        tmp_path,
+        monkeypatch,
+        "examples.couple_tasks.neutral_conversation",
+        {"session": 1, "csv_path": Path("assign.csv")},
+    )
+
+
+def test_couple_conversation_logs_and_cleans_up_on_session_fault(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert_conversation_task_fault_handling(
+        tmp_path,
+        monkeypatch,
+        "examples.couple_tasks.couple_conversation",
+        {"session": 1, "conflict": "tuition", "csv_path": Path("assign.csv")},
+    )
 
 
 def test_soundcheck_logs_and_exits_on_session_fault(
@@ -256,9 +274,7 @@ def test_soundcheck_logs_and_exits_on_session_fault(
     monkeypatch.setattr(
         module.logging,
         "error",
-        lambda message, *args: errors.append(
-            message % args if args else str(message)
-        ),
+        lambda message, *args: errors.append(message % args if args else str(message)),
     )
 
     cfg = SessionConfig(
