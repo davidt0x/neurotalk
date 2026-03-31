@@ -39,6 +39,9 @@ class NetworkConfig:
         the hole punch. Use ``"auto"`` to allow either side to start and punch.
     punch_timeout_s:
         Number of seconds to wait for handshake completion.
+    peer_timeout_s:
+        Number of seconds of peer inactivity before the session faults. Set to
+        ``None`` to disable liveness faulting.
     """
 
     local_ports: tuple[int, int, int] = (30002, 30001, 30003)
@@ -46,6 +49,7 @@ class NetworkConfig:
     stun_servers: Sequence[str] = ()
     nat_role: int | str = "auto"
     punch_timeout_s: float = 30.0
+    peer_timeout_s: float | None = 5.0
 
     def __post_init__(self) -> None:
         role = self.nat_role
@@ -54,6 +58,9 @@ class NetworkConfig:
             object.__setattr__(self, "nat_role", role)
         if role not in (0, 1, "auto"):
             msg = "nat_role must be 0 (passive), 1 (active), or 'auto'"
+            raise ValueError(msg)
+        if self.peer_timeout_s is not None and self.peer_timeout_s <= 0:
+            msg = "peer_timeout_s must be positive or None"
             raise ValueError(msg)
 
     @classmethod

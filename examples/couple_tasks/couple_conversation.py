@@ -10,6 +10,7 @@ Couple Conversation Task (speaker/listener with pass key).
 from __future__ import annotations
 
 import argparse
+import logging as py_logging
 import queue
 import time
 from pathlib import Path
@@ -19,6 +20,7 @@ from psychopy import core, event, logging
 if __package__:
     from .log import TaskLogger
     from .utils import (
+        configure_runtime_logging,
         create_window,
         decode_pid,
         finalize_and_quit,
@@ -34,6 +36,7 @@ else:  # pragma: no cover - script-mode support
     sys.path.append(str(Path(__file__).resolve().parents[1]))
     from couple_tasks.log import TaskLogger  # type: ignore[import-not-found]
     from couple_tasks.utils import (  # type: ignore[import-not-found]
+        configure_runtime_logging,
         create_window,
         decode_pid,
         finalize_and_quit,
@@ -44,7 +47,7 @@ else:  # pragma: no cover - script-mode support
     )
 from neurotalk.config import SessionConfig
 from neurotalk.config_cli import add_config_arguments, load_config_from_args
-from neurotalk.session import ConversationSession
+from neurotalk.session import ConversationSession, SessionFaultError
 from neurotalk.turns import TurnEventSource, TurnManager, TurnRole
 
 # ---------- config ----------
@@ -176,483 +179,465 @@ def main(
     if display < 0:
         msg = "--display must be >= 0"
         raise ValueError(msg)
+    configure_runtime_logging(log_level)
 
-    cfg = SessionConfig.from_dict(session_cfg.to_dict())
-    pid = cfg.participant_id
-    dyad, role = decode_pid(pid)
-    cfg.participant_id = pid
-    cfg.role = role
+    conv_session: ConversationSession | None = None
+    logger: TaskLogger | None = None
+    win = None
+    recording_dir = Path("data")
 
-    assignment = load_assignment_row(csv_path, pid)
-    starters = assignment.starters()
-    exp_condition = assignment.condition
+    try:
+        cfg = SessionConfig.from_dict(session_cfg.to_dict())
+        pid = cfg.participant_id
+        dyad, role = decode_pid(pid)
+        cfg.participant_id = pid
+        cfg.role = role
 
-    # --- minimal addition: flip for session 2 ---
-    if session == 2 and exp_condition is not None:
-        c = exp_condition.strip().lower()
-        flip = {"persuade": "compromise", "compromise": "persuade"}
-        exp_condition = flip.get(
-            c, exp_condition
-        )  # leave unchanged if unexpected value
-    # -------------------------------------------
+        assignment = load_assignment_row(csv_path, pid)
+        starters = assignment.starters()
+        exp_condition = assignment.condition
+        if session == 2 and exp_condition is not None:
+            c = exp_condition.strip().lower()
+            flip = {"persuade": "compromise", "compromise": "persuade"}
+            exp_condition = flip.get(c, exp_condition)
 
-    first_speaker = pick_first_speaker(
-        starters, session=session, session_type="couple"
-    )  # 'A' or 'B'
-    conflict_text = conflict.strip()
-    conflict_slug = slug(conflict_text)
+        first_speaker = pick_first_speaker(
+            starters, session=session, session_type="couple"
+        )
+        conflict_text = conflict.strip()
+        conflict_slug = slug(conflict_text)
 
-    recording_dir = cfg.recording.directory
-    recording_dir.mkdir(parents=True, exist_ok=True)
+        recording_dir = cfg.recording.directory
+        recording_dir.mkdir(parents=True, exist_ok=True)
 
-    conv_session: ConversationSession | None = ConversationSession(
-        cfg, recording_enabled=False, recording_label=RECORDING_LABEL
-    )
-    turn_manager = TurnManager(conv_session)
-    conv_session.connect()
-    conv_session.enable_transmit(False)
-    conv_session.enable_receive(False)
+        logger = TaskLogger(
+            pid=pid,
+            session=session,
+            session_type=SESSION_TYPE,
+            exp_condition=exp_condition,
+            first_speaker=first_speaker,
+            conflict_text_slug=conflict_slug,
+            task_code="CONV",
+            dyad=dyad,
+            participant_role=role,
+            conflict_text=conflict_text,
+        )
 
-    logger = TaskLogger(
-        pid=pid,
-        session=session,
-        session_type=SESSION_TYPE,
-        exp_condition=exp_condition,
-        first_speaker=first_speaker,
-        conflict_text_slug=conflict_slug,
-        task_code="CONV",
-        dyad=dyad,
-        participant_role=role,
-        conflict_text=conflict_text,
-    )
-    level_name = log_level.upper()
-    level_value = getattr(logging, level_name, logging.WARNING)
-    logging.console.setLevel(level_value)
+        conv_session = ConversationSession(
+            cfg, recording_enabled=False, recording_label=RECORDING_LABEL
+        )
+        turn_manager = TurnManager(conv_session)
+        conv_session.connect()
+        conv_session.enable_transmit(False)
+        conv_session.enable_receive(False)
 
-    win = create_window(
-        scanner=scanner,
-        size=WIN_SIZE,
-        fullscr=fullscr,
-        screen=display,
-        settle_seconds=3.0,
-    )
-    make_text = text_factory(win, letter_height=LETTER_H, wrap_width=WRAP_W)
+        def check_session_fault() -> None:
+            if conv_session is not None:
+                conv_session.raise_if_faulted()
 
-    # Trackball: treated as a standard mouse
-    # On the 932 box, make sure the device is in a HID mouse/trackball mode.
-    trackball = event.Mouse(win=win, visible=False)
+        win = create_window(
+            scanner=scanner,
+            size=WIN_SIZE,
+            fullscr=fullscr,
+            screen=display,
+            settle_seconds=3.0,
+        )
+        make_text = text_factory(win, letter_height=LETTER_H, wrap_width=WRAP_W)
+        trackball = event.Mouse(win=win, visible=False)
+        last_pass_pressed = False
+        next_turn_change_allowed_at = 0.0
 
-    # For debouncing the pass button (left button on the trackball)
-    last_pass_pressed = False
-    next_turn_change_allowed_at = 0.0
+        show_instructions = make_text(text="")
+        show_sync = make_text(text="Syncing start time with your partner...")
+        show_role_txt = make_text(text="", pos=(0, 0.65))
+        show_pass = make_text(text="", pos=(0, 0.05))
+        show_timer = make_text(text="", pos=(0, -0.70))
+        show_topic = make_text(text="", pos=(0, 0.35))
+        show_blank = make_text(text="+", pos=(0, 0.00))
+        show_end = make_text(text="You are now done with this task.")
 
-    show_instructions = make_text(text="")
-    show_sync = make_text(text="Syncing start time with your partner...")
-    show_role_txt = make_text(text="", pos=(0, 0.65))
-    show_pass = make_text(text="", pos=(0, 0.05))
-    show_timer = make_text(text="", pos=(0, -0.70))
-    show_topic = make_text(text="", pos=(0, 0.35))
-    show_blank = make_text(text="+", pos=(0, 0.00))
-    show_end = make_text(text="You are now done with this task.")
-
-    show_sync.setAutoDraw(True)
-    win.flip()
-    instr_sync_time = conv_session.sync_start(SYNC_START_LAG)
-    logging.info(f"Pre-instruction sync ready at {instr_sync_time}")
-    while True:
-        now = time.time()
-        if now >= instr_sync_time:
-            break
-        keys = event.getKeys([KEY_QUIT])
-        if KEY_QUIT in keys:
-            finalize_and_quit(conv_session, recording_dir, logger, mixdown, win)
-            return
+        show_sync.setAutoDraw(True)
         win.flip()
-        core.wait(0.01)
-    show_sync.setAutoDraw(False)
-
-    cond = (exp_condition or "").strip().lower()
-    minutes = round(COMM_S / 60.0)
-
-    persuade_instr_text_couple = (
-        "In this task, we’d like you to have a conversation about a significant, \n"
-        "unresolved conflict or tension in your relationship. \n"
-        "Based on your and your partner’s survey responses about your relationship, \n"
-        f"we have selected the following conflict area: {conflict_text.upper()}.\n\n\n"
-        "Before the conversation, think about the following: \n\n"
-        "• What the conflict is about\n"
-        "• A concrete example of when this issue makes you upset\n"
-        "• The causes of this issue\n"
-        "• Your role and your partner's role in this conflict\n"
-        "• Potential solutions to this conflict\n\n\n"
-        "IMPORTANT: During this conversation, \n"
-        "try to PERSUADE your partner how to solve this problem.\n"
-        "We are studying how persuasion works in the brain.\n"
-        "During the conversation, propose your solutions to the conflict\n"
-        "and try to convince your partner to agree with YOUR solutions as much as possible.\n"
-        "Your goal is to get them to agree with YOUR SOLUTION to this issue.\n\n\n"
-        f"You will have {minutes} minute{'s' if minutes != 1 else ''} for this conversation.\n"
-        "A timer will show you how many seconds are left.\n\n"
-        "During the conversation, only one person can speak at a time.\n"
-        "When you are speaking, you can press the trackball button \n"
-        "to pass the mic to your partner whenever you are done.\n"
-        "When you are listening, you can press the trackball button\n"
-        "to take the mic if you want to speak. \n\n\n"
-        "Tell the experimenter when you are ready to begin. \n"
-        "We will turn off sound in the control room to give you both some privacy.\n"
-        "When the scan begins, you’ll first see a fixation cross for 10 seconds.\n"
-        "After that, you will see instructions to begin the conversation."
-    )
-
-    compromise_instr_text_couple = (
-        "In this task, we’d like you to have a conversation about a significant, \n"
-        "unresolved conflict or tension in your relationship. \n"
-        "Based on your and your partner’s survey responses about your relationship, \n"
-        f"we have selected the following conflict area: {conflict_text.upper()}.\n\n\n"
-        "Before the conversation, think about the following: \n\n"
-        "• What the conflict is about\n"
-        "• A concrete example of when this issue makes you upset\n"
-        "• The causes of this issue\n"
-        "• Your role and your partner's role in this conflict\n"
-        "• Potential solutions to this conflict\n\n\n"
-        "IMPORTANT: During this conversation,\n"
-        "try to COMPROMISE with your partner about how to solve this problem.\n"
-        "We are studying how collaboration works in the brain. \n"
-        "During the conversation, work together to identify solutions to the problem\n"
-        "and try to reconcile any differences of opinion as much as possible.\n"
-        "Your goal is to find a JOINT SOLUTION that you both agree on.\n\n\n"
-        f"You will have {minutes} minute{'s' if minutes != 1 else ''} for this conversation.\n"
-        "A timer will show you how many seconds are left.\n\n"
-        "During the conversation, only one person can speak at a time.\n"
-        "When you are speaking, you can press the trackball button \n"
-        "to pass the mic to your partner whenever you are done.\n"
-        "When you are listening, you can press the trackball button\n"
-        "to take the mic if you want to speak. \n\n\n"
-        "Tell the experimenter when you are ready to begin. \n"
-        "We will turn off sound in the control room to give you both some privacy.\n"
-        "When the scan begins, you’ll first see a fixation cross for 10 seconds.\n"
-        "After that, you will see instructions to begin the conversation."
-    )
-
-    default_instr_text = (
-        "In this next part of the experiment you will have a conversation with your partner.\n\n"
-        f"Please discuss the following problem area: {conflict_text.upper()}.\n\n"
-        f"You will have {minutes} minute{'s' if minutes != 1 else ''} for this conversation.\n"
-        "A timer will show you how many seconds are left.\n\n"
-        "Tell the experimenter when you are ready to begin."
-    )
-
-    instr_text = (
-        persuade_instr_text_couple
-        if cond == "persuade"
-        else compromise_instr_text_couple
-        if cond == "compromise"
-        else default_instr_text
-    )
-
-    event.clearEvents(eventType="keyboard")
-    # Show instructions as pages (split on "\n\n\n"), advance with same pass control as the task
-    result = show_pages_from_delim(
-        win=win,
-        text_stim=show_instructions,
-        full_text=instr_text,
-        trackball=trackball,
-        delim="\n\n\n",
-        advance_key=KEY_PASS,
-        quit_key=KEY_QUIT,
-        allow_trackball_back=True,
-    )
-    if result == "quit":
-        finalize_and_quit(conv_session, recording_dir, logger, mixdown, win)
-        return
-
-    # Now wait for TTL trigger (same as before)
-    event.clearEvents(eventType="keyboard")
-    trigger_source: str | None = None
-    show_instructions.setText("Waiting for the scanner to start...\n\n")
-
-    while trigger_source is None:
-        show_instructions.draw()
-        win.flip()
-        keys = event.getKeys()
-        if KEY_QUIT in keys:
-            finalize_and_quit(conv_session, recording_dir, logger, mixdown, win)
-            return
-        if any(k in TTL_ACCEPT for k in keys):
-            trigger_source = "ttl"
-            break
-        core.wait(0.01)
-
-    run_clock = core.Clock()
-
-    logger.log_timing(
-        role_label=f"trigger_start_{trigger_source}",
-        run_clock=run_clock,
-        phase_clock=None,
-    )
-    logger.log_ttl(
-        role_label="",
-        segment=f"trigger_start_{trigger_source}",
-        run_clock=run_clock,
-        phase_clock=None,
-    )
-    logger.log_event(
-        event_name=f"trigger_start_{trigger_source}",
-        role_label="",
-        run_clock=run_clock,
-        phase_clock=None,
-    )
-
-    show_blank.setAutoDraw(True)
-    win.flip()
-    logging.info(f"Starting pre-conversation blank for {INSTR_BLANK_S:.1f}s")
-    logger.log_timing(
-        role_label="blank_start",
-        run_clock=run_clock,
-        phase_clock=None,
-    )
-    blank_clock = core.Clock()
-    blank_clock.reset()
-    while blank_clock.getTime() < INSTR_BLANK_S:
-        keys = event.getKeys([TTL_KEY, KEY_QUIT])
-        if keys:
-            if TTL_KEY in keys:
-                logger.log_ttl(
-                    role_label="",
-                    segment="blank",
-                    run_clock=run_clock,
-                    phase_clock=blank_clock,
-                )
-                event.clearEvents(eventType="keyboard")
+        instr_sync_time = conv_session.sync_start(SYNC_START_LAG)
+        logging.info(f"Pre-instruction sync ready at {instr_sync_time}")
+        while True:
+            check_session_fault()
+            if time.time() >= instr_sync_time:
+                break
+            keys = event.getKeys([KEY_QUIT])
             if KEY_QUIT in keys:
                 finalize_and_quit(conv_session, recording_dir, logger, mixdown, win)
                 return
-        win.flip()
-        core.wait(0.01)
+            win.flip()
+            core.wait(0.01)
+        show_sync.setAutoDraw(False)
 
-    show_blank.setAutoDraw(False)
+        cond = (exp_condition or "").strip().lower()
+        minutes = round(COMM_S / 60.0)
+        persuade_instr_text_couple = (
+            "In this task, we’d like you to have a conversation about a significant, \n"
+            "unresolved conflict or tension in your relationship. \n"
+            "Based on your and your partner’s survey responses about your relationship, \n"
+            f"we have selected the following conflict area: {conflict_text.upper()}.\n\n\n"
+            "Before the conversation, think about the following: \n\n"
+            "• What the conflict is about\n"
+            "• A concrete example of when this issue makes you upset\n"
+            "• The causes of this issue\n"
+            "• Your role and your partner's role in this conflict\n"
+            "• Potential solutions to this conflict\n\n\n"
+            "IMPORTANT: During this conversation, \n"
+            "try to PERSUADE your partner how to solve this problem.\n"
+            "We are studying how persuasion works in the brain.\n"
+            "During the conversation, propose your solutions to the conflict\n"
+            "and try to convince your partner to agree with YOUR solutions as much as possible.\n"
+            "Your goal is to get them to agree with YOUR SOLUTION to this issue.\n\n\n"
+            f"You will have {minutes} minute{'s' if minutes != 1 else ''} for this conversation.\n"
+            "A timer will show you how many seconds are left.\n\n"
+            "During the conversation, only one person can speak at a time.\n"
+            "When you are speaking, you can press the trackball button \n"
+            "to pass the mic to your partner whenever you are done.\n"
+            "When you are listening, you can press the trackball button\n"
+            "to take the mic if you want to speak. \n\n\n"
+            "Tell the experimenter when you are ready to begin. \n"
+            "We will turn off sound in the control room to give you both some privacy.\n"
+            "When the scan begins, you’ll first see a fixation cross for 10 seconds.\n"
+            "After that, you will see instructions to begin the conversation."
+        )
+        compromise_instr_text_couple = (
+            "In this task, we’d like you to have a conversation about a significant, \n"
+            "unresolved conflict or tension in your relationship. \n"
+            "Based on your and your partner’s survey responses about your relationship, \n"
+            f"we have selected the following conflict area: {conflict_text.upper()}.\n\n\n"
+            "Before the conversation, think about the following: \n\n"
+            "• What the conflict is about\n"
+            "• A concrete example of when this issue makes you upset\n"
+            "• The causes of this issue\n"
+            "• Your role and your partner's role in this conflict\n"
+            "• Potential solutions to this conflict\n\n\n"
+            "IMPORTANT: During this conversation,\n"
+            "try to COMPROMISE with your partner about how to solve this problem.\n"
+            "We are studying how collaboration works in the brain. \n"
+            "During the conversation, work together to identify solutions to the problem\n"
+            "and try to reconcile any differences of opinion as much as possible.\n"
+            "Your goal is to find a JOINT SOLUTION that you both agree on.\n\n\n"
+            f"You will have {minutes} minute{'s' if minutes != 1 else ''} for this conversation.\n"
+            "A timer will show you how many seconds are left.\n\n"
+            "During the conversation, only one person can speak at a time.\n"
+            "When you are speaking, you can press the trackball button \n"
+            "to pass the mic to your partner whenever you are done.\n"
+            "When you are listening, you can press the trackball button\n"
+            "to take the mic if you want to speak. \n\n\n"
+            "Tell the experimenter when you are ready to begin. \n"
+            "We will turn off sound in the control room to give you both some privacy.\n"
+            "When the scan begins, you’ll first see a fixation cross for 10 seconds.\n"
+            "After that, you will see instructions to begin the conversation."
+        )
+        default_instr_text = (
+            "In this next part of the experiment you will have a conversation with your partner.\n\n"
+            f"Please discuss the following problem area: {conflict_text.upper()}.\n\n"
+            f"You will have {minutes} minute{'s' if minutes != 1 else ''} for this conversation.\n"
+            "A timer will show you how many seconds are left.\n\n"
+            "Tell the experimenter when you are ready to begin."
+        )
+        instr_text = (
+            persuade_instr_text_couple
+            if cond == "persuade"
+            else compromise_instr_text_couple
+            if cond == "compromise"
+            else default_instr_text
+        )
 
-    comm_clock = core.Clock()
-    if conv_session is not None:
-        conv_session.enable_recording(True)
+        event.clearEvents(eventType="keyboard")
+        result = show_pages_from_delim(
+            win=win,
+            text_stim=show_instructions,
+            full_text=instr_text,
+            trackball=trackball,
+            delim="\n\n\n",
+            advance_key=KEY_PASS,
+            quit_key=KEY_QUIT,
+            allow_trackball_back=True,
+        )
+        if result == "quit":
+            finalize_and_quit(conv_session, recording_dir, logger, mixdown, win)
+            return
 
-    logger.log_timing(
-        role_label="Communication_start",
-        run_clock=run_clock,
-        phase_clock=comm_clock,
-    )
-
-    initial_role = TurnRole.SPEAKER if role == first_speaker else TurnRole.LISTENER
-    role_text = (
-        "YOUR TURN TO SPEAK" if initial_role.is_speaker else "YOUR TURN TO LISTEN"
-    )
-    pass_text = (
-        "Press trackball button to pass the mic."
-        if initial_role.is_speaker
-        else "Press trackball button to take the mic."
-    )
-    show_topic.setText(f"Problem topic: {conflict_text}")
-
-    show_role_txt.setText(role_text)
-    show_pass.setText(pass_text)
-    show_role_txt.setAutoDraw(True)
-    show_pass.setAutoDraw(True)
-    show_timer.setAutoDraw(True)
-    show_topic.setAutoDraw(True)
-
-    turn_manager.start(initial_role)
-
-    logger.experiment.addData("dyad", dyad)
-    logger.experiment.addData("session", session)
-    logger.experiment.addData("exp_condition", exp_condition)
-    logger.experiment.addData("event", "communication_start")
-    logger.experiment.addData(
-        "role", "speaker" if (role == first_speaker) else "listener"
-    )
-    logger.experiment.addData("onset_run_s", run_clock.getTime())
-    logger.experiment.addData("onset_phase_s", comm_clock.getTime())
-    logger.experiment.addData("conflict_text", conflict_text)
-    logger.experiment.addData("first_speaker", first_speaker)
-    logger.experiment.addData("participant_role", role)
-    logger.experiment.nextEntry()
-
-    logger.log_timing(
-        role_label="speaker" if (role == first_speaker) else "listener",
-        run_clock=run_clock,
-        phase_clock=comm_clock,
-    )
-
-    while comm_clock.getTime() < COMM_S:
-        while True:
-            try:
-                msg_type, payload = conv_session.next_control_event(timeout=0.0)
-            except queue.Empty:
-                break
-            turn_event = turn_manager.handle_control_event(msg_type, payload)
-            if not turn_event or turn_event.source not in (
-                TurnEventSource.REMOTE_PASS,
-                TurnEventSource.REMOTE_TAKE,
-            ):
-                continue
-
-            if turn_event.role.is_speaker:
-                show_role_txt.setText("YOUR TURN TO SPEAK")
-                show_pass.setText("Press trackball button to pass the mic.")
-                toggled_role = "speaker"
-                event_name = "partner_pass"
-            else:
-                show_role_txt.setText("YOUR TURN TO LISTEN")
-                show_pass.setText("Press trackball button to take the mic.")
-                toggled_role = "listener"
-                event_name = "partner_take"
-
-            logger.log_timing(
-                event_name=event_name,  # "partner_pass" or "partner_take"
-                role_label=toggled_role,
-                run_clock=run_clock,
-                phase_clock=comm_clock,
-            )
-
-            logger.log_event(
-                event_name=event_name,
-                role_label=toggled_role,
-                run_clock=run_clock,
-                phase_clock=comm_clock,
-            )
-            next_turn_change_allowed_at = max(
-                next_turn_change_allowed_at, time.time() + PASS_REFRACTORY_S
-            )
-
-        current_role_label = "speaker" if turn_manager.is_speaker else "listener"
-        keys_ttl = event.getKeys([TTL_KEY])
-        if keys_ttl and (TTL_KEY in keys_ttl):
-            logger.log_ttl(
-                role_label=current_role_label,
-                segment="communication",
-                run_clock=run_clock,
-                phase_clock=comm_clock,
-            )
-            event.clearEvents(eventType="keyboard")
-
-        remaining = round(COMM_S - comm_clock.getTime())
-        show_timer.setText(f"{remaining} seconds")
-        win.flip()
-
-        # ------ 1) Keyboard pass / quit ------
-        keys = event.getKeys(keyList=[KEY_PASS, KEY_QUIT], timeStamped=comm_clock)
-        key_from_kb = None
-        if keys:
-            key_from_kb, _rt_kb = keys[-1]
-
-        # ------ 2) Trackball pass (left button) ------
-        # trackball buttons: [left, middle, right]
-        buttons = trackball.getPressed()
-        pass_pressed_now = bool(buttons[0])
-
-        # Edge detection: only trigger on 0 -> 1 transition
-        key_from_tb = None
-        if pass_pressed_now and not last_pass_pressed:
-            key_from_tb = KEY_PASS  # pretend we saw a '1' press from keyboard
-
-        # Update debounce state
-        last_pass_pressed = pass_pressed_now
-
-        # Decide which "key" to act on (trackball gets priority if both fire)
-        key = key_from_tb or key_from_kb
-
-        if key is not None:
-            if key == KEY_QUIT:
+        event.clearEvents(eventType="keyboard")
+        trigger_source: str | None = None
+        show_instructions.setText("Waiting for the scanner to start...\n\n")
+        while trigger_source is None:
+            check_session_fault()
+            show_instructions.draw()
+            win.flip()
+            keys = event.getKeys()
+            if KEY_QUIT in keys:
                 finalize_and_quit(conv_session, recording_dir, logger, mixdown, win)
                 return
+            if any(k in TTL_ACCEPT for k in keys):
+                trigger_source = "ttl"
+                break
+            core.wait(0.01)
 
-            if key == KEY_PASS:
-                time_here = time.time()
-                run_here = run_clock.getTime()
-                comm_here = comm_clock.getTime()
-                if time_here < next_turn_change_allowed_at:
-                    blocked_role = "speaker" if turn_manager.is_speaker else "listener"
-                    blocked_event_name = (
-                        "pass_block" if turn_manager.is_speaker else "take_block"
-                    )
-                    logger.log_timing(
-                        event_name=blocked_event_name,
-                        role_label=blocked_role,
-                        wall_time=time_here,
-                        run_time=run_here,
-                        phase_time=comm_here,
-                    )
-                    logger.log_event(
-                        event_name=blocked_event_name,
-                        role_label=blocked_role,
+        run_clock = core.Clock()
+        logger.log_timing(
+            role_label=f"trigger_start_{trigger_source}",
+            run_clock=run_clock,
+            phase_clock=None,
+        )
+        logger.log_ttl(
+            role_label="",
+            segment=f"trigger_start_{trigger_source}",
+            run_clock=run_clock,
+            phase_clock=None,
+        )
+        logger.log_event(
+            event_name=f"trigger_start_{trigger_source}",
+            role_label="",
+            run_clock=run_clock,
+            phase_clock=None,
+        )
+
+        show_blank.setAutoDraw(True)
+        win.flip()
+        logging.info(f"Starting pre-conversation blank for {INSTR_BLANK_S:.1f}s")
+        logger.log_timing(
+            role_label="blank_start",
+            run_clock=run_clock,
+            phase_clock=None,
+        )
+        blank_clock = core.Clock()
+        blank_clock.reset()
+        while blank_clock.getTime() < INSTR_BLANK_S:
+            check_session_fault()
+            keys = event.getKeys([TTL_KEY, KEY_QUIT])
+            if keys:
+                if TTL_KEY in keys:
+                    logger.log_ttl(
+                        role_label="",
+                        segment="blank",
                         run_clock=run_clock,
-                        phase_clock=comm_clock,
+                        phase_clock=blank_clock,
                     )
+                    event.clearEvents(eventType="keyboard")
+                if KEY_QUIT in keys:
+                    finalize_and_quit(
+                        conv_session, recording_dir, logger, mixdown, win
+                    )
+                    return
+            win.flip()
+            core.wait(0.01)
+
+        show_blank.setAutoDraw(False)
+
+        comm_clock = core.Clock()
+        conv_session.enable_recording(True)
+        logger.log_timing(
+            role_label="Communication_start",
+            run_clock=run_clock,
+            phase_clock=comm_clock,
+        )
+
+        initial_role = TurnRole.SPEAKER if role == first_speaker else TurnRole.LISTENER
+        role_text = (
+            "YOUR TURN TO SPEAK" if initial_role.is_speaker else "YOUR TURN TO LISTEN"
+        )
+        pass_text = (
+            "Press trackball button to pass the mic."
+            if initial_role.is_speaker
+            else "Press trackball button to take the mic."
+        )
+        show_topic.setText(f"Problem topic: {conflict_text}")
+        show_role_txt.setText(role_text)
+        show_pass.setText(pass_text)
+        show_role_txt.setAutoDraw(True)
+        show_pass.setAutoDraw(True)
+        show_timer.setAutoDraw(True)
+        show_topic.setAutoDraw(True)
+
+        turn_manager.start(initial_role)
+        logger.experiment.addData("dyad", dyad)
+        logger.experiment.addData("session", session)
+        logger.experiment.addData("exp_condition", exp_condition)
+        logger.experiment.addData("event", "communication_start")
+        logger.experiment.addData(
+            "role", "speaker" if (role == first_speaker) else "listener"
+        )
+        logger.experiment.addData("onset_run_s", run_clock.getTime())
+        logger.experiment.addData("onset_phase_s", comm_clock.getTime())
+        logger.experiment.addData("conflict_text", conflict_text)
+        logger.experiment.addData("first_speaker", first_speaker)
+        logger.experiment.addData("participant_role", role)
+        logger.experiment.nextEntry()
+        logger.log_timing(
+            role_label="speaker" if (role == first_speaker) else "listener",
+            run_clock=run_clock,
+            phase_clock=comm_clock,
+        )
+
+        while comm_clock.getTime() < COMM_S:
+            check_session_fault()
+            while True:
+                try:
+                    msg_type, payload = conv_session.next_control_event(timeout=0.0)
+                except queue.Empty:
+                    break
+                turn_event = turn_manager.handle_control_event(msg_type, payload)
+                if not turn_event or turn_event.source not in (
+                    TurnEventSource.REMOTE_PASS,
+                    TurnEventSource.REMOTE_TAKE,
+                ):
                     continue
 
-                if turn_manager.is_speaker:
-                    turn_manager.pass_turn(
-                        run_time=run_here, phase_time=comm_here, wall_time=time_here
-                    )
-                    show_role_txt.setText("YOUR TURN TO LISTEN")
-                    show_pass.setText("Press trackball button to take the mic.")
-                    toggled_role = "listener"
-                    event_name = "pass_press"
-                else:
-                    turn_manager.take_turn(
-                        run_time=run_here, phase_time=comm_here, wall_time=time_here
-                    )
+                if turn_event.role.is_speaker:
                     show_role_txt.setText("YOUR TURN TO SPEAK")
                     show_pass.setText("Press trackball button to pass the mic.")
                     toggled_role = "speaker"
-                    event_name = "take_press"
+                    event_name = "partner_pass"
+                else:
+                    show_role_txt.setText("YOUR TURN TO LISTEN")
+                    show_pass.setText("Press trackball button to take the mic.")
+                    toggled_role = "listener"
+                    event_name = "partner_take"
 
                 logger.log_timing(
-                    event_name=event_name,  # "pass_press" or "take_press"
-                    role_label=toggled_role,  # resulting role
-                    wall_time=time_here,
-                    run_time=run_here,
-                    phase_time=comm_here,
+                    event_name=event_name,
+                    role_label=toggled_role,
+                    run_clock=run_clock,
+                    phase_clock=comm_clock,
                 )
-
                 logger.log_event(
                     event_name=event_name,
                     role_label=toggled_role,
                     run_clock=run_clock,
                     phase_clock=comm_clock,
                 )
-                next_turn_change_allowed_at = time_here + PASS_REFRACTORY_S
+                next_turn_change_allowed_at = max(
+                    next_turn_change_allowed_at, time.time() + PASS_REFRACTORY_S
+                )
 
-    turn_manager.stop()
+            current_role_label = "speaker" if turn_manager.is_speaker else "listener"
+            keys_ttl = event.getKeys([TTL_KEY])
+            if keys_ttl and (TTL_KEY in keys_ttl):
+                logger.log_ttl(
+                    role_label=current_role_label,
+                    segment="communication",
+                    run_clock=run_clock,
+                    phase_clock=comm_clock,
+                )
+                event.clearEvents(eventType="keyboard")
 
-    end_role_label = (
-        "speaker" if show_role_txt.text == "YOUR TURN TO SPEAK" else "listener"
-    )
-    logger.experiment.addData("dyad", dyad)
-    logger.experiment.addData("session", session)
-    logger.experiment.addData("exp_condition", exp_condition)
-    logger.experiment.addData("event", "communication_end")
-    logger.experiment.addData("role", end_role_label)
-    logger.experiment.addData("onset_run_s", run_clock.getTime())
-    logger.experiment.addData("onset_phase_s", comm_clock.getTime())
-    logger.experiment.addData("conflict_text", conflict_text)
-    logger.experiment.addData("first_speaker", first_speaker)
-    logger.experiment.addData("participant_role", role)
-    logger.experiment.nextEntry()
+            remaining = round(COMM_S - comm_clock.getTime())
+            show_timer.setText(f"{remaining} seconds")
+            win.flip()
 
-    logger.log_timing(
-        role_label="communication_end",
-        run_clock=run_clock,
-        phase_clock=comm_clock,
-    )
+            keys = event.getKeys(keyList=[KEY_PASS, KEY_QUIT], timeStamped=comm_clock)
+            key_from_kb = None
+            if keys:
+                key_from_kb, _rt_kb = keys[-1]
 
-    for stim in (show_role_txt, show_timer, show_pass, show_topic):
-        stim.setAutoDraw(False)
+            buttons = trackball.getPressed()
+            pass_pressed_now = bool(buttons[0])
+            key_from_tb = None
+            if pass_pressed_now and not last_pass_pressed:
+                key_from_tb = KEY_PASS
+            last_pass_pressed = pass_pressed_now
 
-    show_end.draw()
-    win.flip()
-    core.wait(1.0)
+            key = key_from_tb or key_from_kb
+            if key is None:
+                continue
+            if key == KEY_QUIT:
+                finalize_and_quit(conv_session, recording_dir, logger, mixdown, win)
+                return
 
-    finalize_and_quit(conv_session, recording_dir, logger, mixdown, win)
+            time_here = time.time()
+            run_here = run_clock.getTime()
+            comm_here = comm_clock.getTime()
+            if time_here < next_turn_change_allowed_at:
+                blocked_role = "speaker" if turn_manager.is_speaker else "listener"
+                blocked_event_name = (
+                    "pass_block" if turn_manager.is_speaker else "take_block"
+                )
+                logger.log_timing(
+                    event_name=blocked_event_name,
+                    role_label=blocked_role,
+                    wall_time=time_here,
+                    run_time=run_here,
+                    phase_time=comm_here,
+                )
+                logger.log_event(
+                    event_name=blocked_event_name,
+                    role_label=blocked_role,
+                    run_clock=run_clock,
+                    phase_clock=comm_clock,
+                )
+                continue
+
+            if turn_manager.is_speaker:
+                turn_manager.pass_turn(
+                    run_time=run_here, phase_time=comm_here, wall_time=time_here
+                )
+                show_role_txt.setText("YOUR TURN TO LISTEN")
+                show_pass.setText("Press trackball button to take the mic.")
+                toggled_role = "listener"
+                event_name = "pass_press"
+            else:
+                turn_manager.take_turn(
+                    run_time=run_here, phase_time=comm_here, wall_time=time_here
+                )
+                show_role_txt.setText("YOUR TURN TO SPEAK")
+                show_pass.setText("Press trackball button to pass the mic.")
+                toggled_role = "speaker"
+                event_name = "take_press"
+
+            logger.log_timing(
+                event_name=event_name,
+                role_label=toggled_role,
+                wall_time=time_here,
+                run_time=run_here,
+                phase_time=comm_here,
+            )
+            logger.log_event(
+                event_name=event_name,
+                role_label=toggled_role,
+                run_clock=run_clock,
+                phase_clock=comm_clock,
+            )
+            next_turn_change_allowed_at = time_here + PASS_REFRACTORY_S
+
+        turn_manager.stop()
+        end_role_label = (
+            "speaker" if show_role_txt.text == "YOUR TURN TO SPEAK" else "listener"
+        )
+        logger.experiment.addData("dyad", dyad)
+        logger.experiment.addData("session", session)
+        logger.experiment.addData("exp_condition", exp_condition)
+        logger.experiment.addData("event", "communication_end")
+        logger.experiment.addData("role", end_role_label)
+        logger.experiment.addData("onset_run_s", run_clock.getTime())
+        logger.experiment.addData("onset_phase_s", comm_clock.getTime())
+        logger.experiment.addData("conflict_text", conflict_text)
+        logger.experiment.addData("first_speaker", first_speaker)
+        logger.experiment.addData("participant_role", role)
+        logger.experiment.nextEntry()
+        logger.log_timing(
+            role_label="communication_end",
+            run_clock=run_clock,
+            phase_clock=comm_clock,
+        )
+
+        for stim in (show_role_txt, show_timer, show_pass, show_topic):
+            stim.setAutoDraw(False)
+
+        show_end.draw()
+        win.flip()
+        core.wait(1.0)
+        finalize_and_quit(conv_session, recording_dir, logger, mixdown, win)
+    except SessionFaultError as exc:
+        py_logging.error(
+            "NeuroTalk session fault detected (%s). Stop and restart the run.",
+            exc,
+        )
+        finalize_and_quit(conv_session, recording_dir, logger, mixdown, win)
 
 
 def _build_parser() -> argparse.ArgumentParser:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import ctypes
+import logging as py_logging
 import os
 import re
 import subprocess
@@ -11,6 +12,22 @@ from pathlib import Path
 from psychopy import core, logging, monitors, visual  # type: ignore[import-not-found]
 
 DISPLAY_SWITCH_SETTLE_S = 3.0
+
+
+def configure_runtime_logging(log_level: str) -> int:
+    """Configure Python and PsychoPy logging to the same severity."""
+
+    level_name = (log_level or "INFO").upper()
+    level_value = getattr(py_logging, level_name, py_logging.INFO)
+    root = py_logging.getLogger()
+    if not root.handlers:
+        py_logging.basicConfig(level=level_value, format="%(message)s")
+    else:
+        root.setLevel(level_value)
+        for handler in root.handlers:
+            handler.setLevel(level_value)
+    logging.console.setLevel(level_value)
+    return level_value
 
 
 @dataclass(frozen=True)
@@ -36,9 +53,9 @@ class AssignmentRow:
 def finalize_and_quit(
     conv_session,
     recording_dir: Path,
-    logger,
-    mixdown: bool,
-    win,
+    logger=None,
+    mixdown: bool = True,
+    win=None,
 ) -> None:
     """
     Ensure audio artifacts and logs are flushed before exiting early.
@@ -60,8 +77,10 @@ def finalize_and_quit(
                 except Exception as exc:  # pragma: no cover - best-effort shutdown
                     logging.error(f"Failed to generate mix track: {exc}")
     finally:
-        logger.save_and_close()
-        close_window_and_restore_display(win)
+        if logger is not None:
+            logger.save_and_close()
+        if win is not None:
+            close_window_and_restore_display(win)
         core.quit()
 
 

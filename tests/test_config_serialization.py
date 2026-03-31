@@ -47,6 +47,7 @@ def test_from_dict_explicit(tmp_path: Path) -> None:
         stun_servers=("stun:example.org",),
         nat_role=0,
         punch_timeout_s=10.0,
+        peer_timeout_s=5.0,
     )
     assert cfg.audio == AudioConfig(
         sample_rate_hz=22_050,
