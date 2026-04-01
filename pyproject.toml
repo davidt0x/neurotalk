@@ -42,8 +42,8 @@ dependencies = [
 ]
 [project.optional-dependencies]
 examples = [
-  "psychopy",
-  "pygame",
+  "psychopy; platform_system == 'Windows'",
+  "pygame; platform_system == 'Windows'",
 ]
 
 [project.urls]

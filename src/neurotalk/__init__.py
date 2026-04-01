@@ -21,7 +21,12 @@ from .records import (
     TelemetryReporter,
     WavRecorder,
 )
-from .session import ConversationSession
+from .session import (
+    ConversationSession,
+    SessionFault,
+    SessionFaultError,
+    SessionFaultSource,
+)
 from .turns import TurnEvent, TurnEventSource, TurnManager, TurnRole
 
 __all__ = [
@@ -35,6 +40,9 @@ __all__ = [
     "RecordingManifest",
     "SegmentMarker",
     "SessionConfig",
+    "SessionFault",
+    "SessionFaultError",
+    "SessionFaultSource",
     "TelemetryReporter",
     "TurnEvent",
     "TurnEventSource",

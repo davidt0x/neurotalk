@@ -14,22 +14,28 @@ from pathlib import Path
 
 import yaml
 from psychopy import core  # type: ignore[import-not-found]
-from psychopy import logging as pylogging
 
 if __package__:
-    from .utils import close_window_and_restore_display, create_window
+    from .utils import (
+        cli_spinner,
+        close_window_and_restore_display,
+        configure_runtime_logging,
+        create_window,
+    )
 else:  # pragma: no cover - script-mode support
     import sys
 
     sys.path.append(str(Path(__file__).resolve().parents[1]))
     from couple_tasks.utils import (  # type: ignore[import-not-found]
+        cli_spinner,
         close_window_and_restore_display,
+        configure_runtime_logging,
         create_window,
     )
 
 from neurotalk.config import SessionConfig
 from neurotalk.config_cli import add_config_arguments, load_config_from_args
-from neurotalk.session import ConversationSession
+from neurotalk.session import ConversationSession, SessionFaultError
 from neurotalk.soundcheck import run_conversation_soundcheck
 
 SCANNER = None
@@ -51,10 +57,7 @@ def main(
     if display < 0:
         msg = "--display must be >= 0"
         raise ValueError(msg)
-    level_name = log_level.upper()
-    level_value = getattr(logging, level_name, logging.INFO)
-    logging.basicConfig(level=level_value, format="%(message)s")
-    pylogging.console.setLevel(level_value)
+    configure_runtime_logging(log_level)
 
     conv_session: ConversationSession | None = None
     win = None
@@ -62,7 +65,11 @@ def main(
         conv_session = ConversationSession(
             session_cfg, recording_enabled=False, recording_label="soundcheck"
         )
-        conv_session.connect()
+        with cli_spinner(
+            "Waiting for partner handshake...",
+            success_message="Handshake complete.",
+        ):
+            conv_session.connect()
 
         if ui in {"auto", "psychopy"}:
             win = create_window(
@@ -82,6 +89,11 @@ def main(
             config_path,
             playback_gain=result.playback_gain,
             volume_percent=result.volume_percent,
+        )
+    except SessionFaultError as exc:
+        logging.error(
+            "NeuroTalk session fault detected (%s). Stop and restart the run.",
+            exc,
         )
     except KeyboardInterrupt:
         logging.info("Soundcheck aborted.")

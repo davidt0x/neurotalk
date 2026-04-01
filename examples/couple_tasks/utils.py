@@ -2,15 +2,46 @@ from __future__ import annotations
 
 import csv
 import ctypes
+import logging as py_logging
 import os
 import re
 import subprocess
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
 from psychopy import core, logging, monitors, visual  # type: ignore[import-not-found]
+from rich.console import Console
 
 DISPLAY_SWITCH_SETTLE_S = 3.0
+_console = Console(stderr=True)
+
+
+@contextmanager
+def cli_spinner(message: str, *, success_message: str | None = None):
+    """
+    Show a Rich status spinner while a blocking startup step is running.
+    """
+    with _console.status(message, spinner="dots"):
+        yield
+    if success_message:
+        _console.print(success_message)
+
+
+def configure_runtime_logging(log_level: str) -> int:
+    """Configure Python and PsychoPy logging to the same severity."""
+
+    level_name = (log_level or "INFO").upper()
+    level_value = getattr(py_logging, level_name, py_logging.INFO)
+    root = py_logging.getLogger()
+    if not root.handlers:
+        py_logging.basicConfig(level=level_value, format="%(message)s")
+    else:
+        root.setLevel(level_value)
+        for handler in root.handlers:
+            handler.setLevel(level_value)
+    logging.console.setLevel(level_value)
+    return level_value
 
 
 @dataclass(frozen=True)
@@ -36,9 +67,9 @@ class AssignmentRow:
 def finalize_and_quit(
     conv_session,
     recording_dir: Path,
-    logger,
-    mixdown: bool,
-    win,
+    logger=None,
+    mixdown: bool = True,
+    win=None,
 ) -> None:
     """
     Ensure audio artifacts and logs are flushed before exiting early.
@@ -60,8 +91,10 @@ def finalize_and_quit(
                 except Exception as exc:  # pragma: no cover - best-effort shutdown
                     logging.error(f"Failed to generate mix track: {exc}")
     finally:
-        logger.save_and_close()
-        close_window_and_restore_display(win)
+        if logger is not None:
+            logger.save_and_close()
+        if win is not None:
+            close_window_and_restore_display(win)
         core.quit()
 
 
@@ -114,6 +147,14 @@ def switch_display_mode(mode: str) -> bool:
     normalized_mode = mode.lower()
     if normalized_mode not in {"clone", "extend"}:
         logging.error(f"Unsupported display mode requested: {mode}")
+        return False
+
+    if os.name != "nt":
+        logging.info(
+            "Display switching skipped for %s on non-Windows platform (%s).",
+            normalized_mode,
+            os.name,
+        )
         return False
 
     if normalized_mode == "clone" and not has_multiple_displays():
@@ -300,7 +341,11 @@ def create_window(
     attempting the clone switch. This keeps paired tasks on machines with
     different display setups on the same startup timeline.
     """
-    switched = switch_display_mode("clone")
+    switched = False
+    if os.name == "nt":
+        switched = switch_display_mode("clone")
+    else:
+        logging.info("Display switching disabled on non-Windows platforms.")
     wait_seconds = DISPLAY_SWITCH_SETTLE_S if switched else 0.0
     if settle_seconds is not None:
         wait_seconds = max(0.0, float(settle_seconds))

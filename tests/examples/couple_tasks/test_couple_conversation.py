@@ -75,3 +75,28 @@ def test_close_window_and_restore_display_waits_after_extend(
     utils.close_window_and_restore_display(DummyWindow(), settle_seconds=1.5)
 
     assert events == ["close", "switch:extend", "wait:1.5"]
+
+
+def test_finalize_and_quit_allows_missing_logger_and_window(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+):
+    events: list[str] = []
+
+    class DummySession:
+        def close(self) -> None:
+            events.append("close")
+
+        def export_segments(self, _path) -> None:
+            events.append("export_segments")
+
+    monkeypatch.setattr(utils.core, "quit", lambda: events.append("quit"))
+
+    utils.finalize_and_quit(
+        DummySession(),
+        tmp_path,
+        logger=None,
+        mixdown=False,
+        win=None,
+    )
+
+    assert events == ["close", "export_segments", "quit"]

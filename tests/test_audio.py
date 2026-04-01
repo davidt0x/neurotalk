@@ -119,6 +119,37 @@ class FakeStreamFactory:
         self.terminated = True
 
 
+class BrokenInputStream(FakeInputStream):
+    def start_stream(self) -> None:
+        msg = "input stream failed"
+        raise RuntimeError(msg)
+
+
+class BrokenInputStreamFactory(FakeStreamFactory):
+    def open_input_stream(
+        self, config: AudioConfig, callback: Callback
+    ) -> BrokenInputStream:
+        self.last_input_config = config
+        stream = BrokenInputStream(callback)
+        self.input_stream = stream
+        return stream
+
+
+class BrokenOutputStream(FakeOutputStream):
+    def start_stream(self) -> None:
+        msg = "output stream failed"
+        raise RuntimeError(msg)
+
+
+class BrokenOutputStreamFactory(FakeStreamFactory):
+    def open_output_stream(
+        self, config: AudioConfig, callback: Callback
+    ) -> BrokenOutputStream:
+        stream = BrokenOutputStream(callback, config)
+        self.output_stream = stream
+        return stream
+
+
 def make_packet_with_size(worker: AudioOutputWorker) -> AudioPacket:
     data = bytes(worker._expected_bytes)
     return AudioPacket(pcm=data, counter=1, timestamp=time.time())
@@ -188,15 +219,34 @@ def test_audio_input_worker_respects_recording_toggle():
 
 def test_audio_input_worker_records_errors():
     """Recorder failures bubble into `last_error` and trigger abort flags."""
+    errors: list[Exception] = []
     worker = AudioInputWorker(
         AudioConfig(),
         lambda packet: None,
         recorder=ErrorRecorder(),
         stream_factory=FakeStreamFactory(),
+        fatal_error_handler=errors.append,
     )
     array = np.frombuffer(b"\x00\x00", dtype=np.int16).reshape(1, 1)
     worker._callback(array, 1, None, 0)
     assert isinstance(worker.last_error, RuntimeError)
+    assert len(errors) == 1
+
+
+def test_audio_input_worker_reports_stream_start_errors():
+    errors: list[Exception] = []
+    worker = AudioInputWorker(
+        AudioConfig(),
+        lambda packet: None,
+        stream_factory=BrokenInputStreamFactory(),
+        fatal_error_handler=errors.append,
+    )
+    worker.start()
+    time.sleep(0.01)
+    worker.close()
+
+    assert isinstance(worker.last_error, RuntimeError)
+    assert len(errors) == 1
 
 
 def test_audio_output_worker_playback_and_recording():
@@ -239,7 +289,13 @@ def test_audio_output_worker_disable_playback_and_error_capture():
     """When playback is muted, silence is emitted but recorder errors get logged."""
     recorder = ErrorRecorder()
     factory = FakeStreamFactory()
-    worker = AudioOutputWorker(AudioConfig(), recorder=recorder, stream_factory=factory)
+    errors: list[Exception] = []
+    worker = AudioOutputWorker(
+        AudioConfig(),
+        recorder=recorder,
+        stream_factory=factory,
+        fatal_error_handler=errors.append,
+    )
     worker.start()
     assert factory.output_stream is not None
 
@@ -251,6 +307,7 @@ def test_audio_output_worker_disable_playback_and_error_capture():
 
     assert worker.last_error is not None
     assert chunk == worker._silence
+    assert len(errors) == 1
 
 
 def test_audio_output_worker_applies_gain_to_playback():
@@ -270,6 +327,21 @@ def test_audio_output_worker_applies_gain_to_playback():
 
     samples = np.frombuffer(chunk, dtype=np.int16)
     assert np.all(samples == 500)
+
+
+def test_audio_output_worker_reports_stream_start_errors():
+    errors: list[Exception] = []
+    worker = AudioOutputWorker(
+        AudioConfig(),
+        stream_factory=BrokenOutputStreamFactory(),
+        fatal_error_handler=errors.append,
+    )
+    worker.start()
+    time.sleep(0.01)
+    worker.close()
+
+    assert isinstance(worker.last_error, RuntimeError)
+    assert len(errors) == 1
 
 
 def test_mock_stream_factory_generates_packets():

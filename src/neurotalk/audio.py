@@ -48,6 +48,7 @@ class StreamFactory(Protocol):
 
 
 PacketCallback = Callable[["AudioPacket"], None]
+FatalErrorHandler = Callable[[Exception], None]
 
 
 @dataclass(slots=True)
@@ -100,6 +101,7 @@ class SoundDeviceStreamFactory:
             channels=config.channels,
             dtype="int16",
             blocksize=config.chunk_frames,
+            device=config.input_device,
             callback=callback,
         )
         return SoundDeviceInputStream(stream)
@@ -112,6 +114,7 @@ class SoundDeviceStreamFactory:
             channels=config.channels,
             dtype="int16",
             blocksize=config.chunk_frames,
+            device=config.output_device,
             callback=callback,
         )
         return SoundDeviceOutputStream(stream)
@@ -222,6 +225,7 @@ class AudioInputWorker:
         on_packet: PacketCallback,
         recorder: Recorder | None = None,
         stream_factory: StreamFactory | None = None,
+        fatal_error_handler: FatalErrorHandler | None = None,
     ) -> None:
         self.config = config
         self._on_packet = on_packet
@@ -235,6 +239,8 @@ class AudioInputWorker:
         self._recording_enabled = True
         self._counter = 0
         self._last_error: Exception | None = None
+        self._fatal_error_handler = fatal_error_handler
+        self._fatal_error_reported = False
 
     @property
     def last_error(self) -> Exception | None:
@@ -277,6 +283,8 @@ class AudioInputWorker:
             self._stream.start_stream()
             while self._running.is_set() and self._stream.is_active():
                 time.sleep(0.05)
+        except Exception as exc:
+            self._report_error(exc)
         finally:
             if self._stream is not None:
                 try:
@@ -305,7 +313,22 @@ class AudioInputWorker:
             if self._transmit_enabled:
                 self._on_packet(packet)
         except Exception as exc:
-            self._last_error = exc
+            self._report_error(exc)
+
+    def _report_error(self, exc: Exception) -> None:
+        self._last_error = exc
+        self._running.clear()
+        if self._fatal_error_handler is None or self._fatal_error_reported:
+            return
+        self._fatal_error_reported = True
+        try:
+            self._fatal_error_handler(exc)
+        except Exception as handler_exc:  # pragma: no cover - defensive
+            logging.debug(
+                "AudioInputWorker fatal error handler failed: %s",
+                handler_exc,
+                exc_info=handler_exc,
+            )
 
     def close(self) -> None:
         self.stop()
@@ -326,6 +349,7 @@ class AudioOutputWorker:
         config: AudioConfig,
         recorder: Recorder | None = None,
         stream_factory: StreamFactory | None = None,
+        fatal_error_handler: FatalErrorHandler | None = None,
     ) -> None:
         self.config = config
         self._recorder = recorder
@@ -342,6 +366,8 @@ class AudioOutputWorker:
         self._last_chunk = self._silence
         self._counter = 0
         self._last_error: Exception | None = None
+        self._fatal_error_handler = fatal_error_handler
+        self._fatal_error_reported = False
 
     def _silence_bytes(self, frames: int) -> bytes:
         array = np.zeros((frames, self.config.channels), dtype=np.int16)
@@ -401,6 +427,8 @@ class AudioOutputWorker:
             self._stream.start_stream()
             while self._running.is_set() and self._stream.is_active():
                 time.sleep(0.05)
+        except Exception as exc:
+            self._report_error(exc)
         finally:
             if self._stream is not None:
                 try:
@@ -444,7 +472,7 @@ class AudioOutputWorker:
                 self._recorder.write(record_packet)
             except Exception as exc:
                 logging.debug("Recorder write failed: %s", exc, exc_info=exc)
-                self._last_error = exc
+                self._report_error(exc)
 
         if not self._playback_enabled:
             playback = self._silence_bytes(frame_count)
@@ -490,3 +518,18 @@ class AudioOutputWorker:
     @property
     def last_error(self) -> Exception | None:
         return self._last_error
+
+    def _report_error(self, exc: Exception) -> None:
+        self._last_error = exc
+        self._running.clear()
+        if self._fatal_error_handler is None or self._fatal_error_reported:
+            return
+        self._fatal_error_reported = True
+        try:
+            self._fatal_error_handler(exc)
+        except Exception as handler_exc:  # pragma: no cover - defensive
+            logging.debug(
+                "AudioOutputWorker fatal error handler failed: %s",
+                handler_exc,
+                exc_info=handler_exc,
+            )

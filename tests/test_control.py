@@ -9,6 +9,7 @@ from neurotalk.control import (
     HANDSHAKE_HELLO,
     HANDSHAKE_HI_PARTNER,
     HANDSHAKE_READY,
+    HEARTBEAT,
     SYNC_REQUEST,
     THANKS,
     TURN_TAKE_PREFIX,
@@ -30,6 +31,7 @@ def test_token_messages_classification():
         (THANKS, ControlMessageType.THANKS),
         (DEBUG_READY, ControlMessageType.DEBUG_READY),
         (DEBUG_STOP, ControlMessageType.DEBUG_STOP),
+        (HEARTBEAT, ControlMessageType.HEARTBEAT),
     ]:
         msg_type, payload = classify_payload(token)
         assert msg_type is expected

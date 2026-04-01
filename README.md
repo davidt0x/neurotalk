@@ -40,11 +40,18 @@ pip install neurotalk
 ```
 
 The legacy experiment scripts under `examples/` need windowed UI packages such
-as PsychoPy/Pygame. Install them with:
+as PsychoPy/Pygame. In this repository those dependencies are treated as
+Windows-only because PsychoPy pulls in `wxPython`, which does not have usable
+Linux wheels for our setup. Install them with:
 
 ```bash
 pip install "neurotalk[examples]"
 ```
+
+On Linux/WSL this extra intentionally skips the PsychoPy/Pygame stack so the
+package remains installable. To run the PsychoPy-based examples, use the Windows
+`uv` environment described in `AGENTS.md` (for example from PowerShell), rather
+than trying to build `wxPython` inside WSL.
 
 See the [ReadTheDocs site][rtd-link] for API documentation and change notes.
 

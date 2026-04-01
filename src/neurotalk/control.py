@@ -27,6 +27,7 @@ class ControlMessageType(Enum):
     THANKS = auto()
     DEBUG_READY = auto()
     DEBUG_STOP = auto()
+    HEARTBEAT = auto()
 
 
 HANDSHAKE_HELLO = b"hello!"
@@ -37,6 +38,7 @@ ESCAPE = b"esc"
 THANKS = b"thanks"
 DEBUG_READY = b"debugReady"
 DEBUG_STOP = b"debugStop"
+HEARTBEAT = b"heartbeat"
 
 _DOUBLE = struct.Struct("<d")
 _TRIPLE = struct.Struct("<ddd")
@@ -177,6 +179,8 @@ def classify_payload(data: bytes) -> tuple[ControlMessageType, object | None]:
         return ControlMessageType.DEBUG_READY, None
     if data == DEBUG_STOP:
         return ControlMessageType.DEBUG_STOP, None
+    if data == HEARTBEAT:
+        return ControlMessageType.HEARTBEAT, None
 
     if data.startswith(TURN_TAKE_PREFIX) and len(data) in (
         1 + _TRIPLE.size,

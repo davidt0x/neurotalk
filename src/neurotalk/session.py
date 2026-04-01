@@ -16,6 +16,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from enum import Enum
 from pathlib import Path
 from types import TracebackType
 
@@ -31,6 +32,7 @@ from neurotalk.config import NetworkConfig, SessionConfig
 from neurotalk.control import (
     DEBUG_READY,
     DEBUG_STOP,
+    HEARTBEAT,
     THANKS,
     TURN_TAKE_PREFIX,
     ControlMessageType,
@@ -51,6 +53,36 @@ from neurotalk.records import RecorderTarget, WavRecorder, mix_turn_recordings
 logger = logging.getLogger(__name__)
 
 ControlHandler = Callable[[ControlMessageType, object | None], None]
+HEARTBEAT_INTERVAL_S = 1.0
+
+
+class SessionFaultSource(str, Enum):
+    AUDIO_INPUT = "audio_input"
+    AUDIO_OUTPUT = "audio_output"
+    AUDIO_SEND = "audio_send"
+    AUDIO_RECEIVE = "audio_receive"
+    CONTROL_RECEIVE = "control_receive"
+    PEER_TIMEOUT = "peer_timeout"
+
+
+@dataclass(frozen=True, slots=True)
+class SessionFault:
+    source: SessionFaultSource
+    message: str
+    timestamp: float
+    cause: Exception | None = None
+
+
+class SessionFaultError(RuntimeError):
+    """Raised when a session enters a fatal faulted state."""
+
+    def __init__(self, fault: SessionFault):
+        self.fault = fault
+        super().__init__(self._build_message(fault))
+
+    @staticmethod
+    def _build_message(fault: SessionFault) -> str:
+        return f"{fault.source.value}: {fault.message}"
 
 
 def _ensure_logging_configured(default_level: int = logging.INFO) -> None:
@@ -107,6 +139,10 @@ class SessionState:
     remote_recorder: WavRecorder | None = None
     mix_path: Path | None = None
     owns_stream_factory: bool = False
+    fault: SessionFault | None = None
+    last_peer_activity_monotonic: float | None = None
+    heartbeat_thread: threading.Thread | None = None
+    heartbeat_running: threading.Event | None = None
 
 
 class ConversationSession:
@@ -145,6 +181,8 @@ class ConversationSession:
         self._stream_factory_override = stream_factory
         self._recording_enabled = recording_enabled
         self._recording_label = _normalize_label(recording_label)
+        self._fault_lock = threading.Lock()
+        self._closing = threading.Event()
         try:
             self.state.playback_gain = float(self.config.audio.playback_gain)
         except Exception:
@@ -170,6 +208,10 @@ class ConversationSession:
         if self.state.sockets is not None:
             return
         _ensure_logging_configured(logging.INFO)
+        self._closing.clear()
+        with self._fault_lock:
+            self.state.fault = None
+        self.state.last_peer_activity_monotonic = None
 
         net_cfg: NetworkConfig = self.config.network
         logger.info(
@@ -178,30 +220,44 @@ class ConversationSession:
             net_cfg.nat_role,
         )
         bundle = open_sockets(net_cfg)
-        if net_cfg.stun_servers:
-            run_stun_diagnostics(net_cfg.stun_servers)
+        try:
+            if net_cfg.stun_servers:
+                run_stun_diagnostics(net_cfg.stun_servers)
 
-        remote = hole_punch(bundle, net_cfg)
+            remote = hole_punch(bundle, net_cfg)
 
-        configure_nonblocking(bundle)
-        flush_pending(bundle)
-        logger.debug("connect resolved remote address: %s", remote)
-        self.state.sockets = bundle
-        self._start_control_loop()
-        self._initialize_audio()
+            configure_nonblocking(bundle)
+            flush_pending(bundle)
+            logger.debug("connect resolved remote address: %s", remote)
+            self.state.sockets = bundle
+            self._record_peer_activity()
+            self._start_control_loop()
+            self._initialize_audio()
+            self._start_health_monitor()
+        except Exception:
+            if self.state.sockets is None:
+                bundle.close()
+            else:
+                self.close()
+            raise
 
     def close(self) -> None:
         """Terminate control loop and close sockets."""
 
-        self._stop_control_loop()
-        bundle = self.state.sockets
-        if bundle is not None:
-            self._send_goodbye_packets(bundle)
-        self._shutdown_audio()
-        bundle = self.state.sockets
-        if bundle is not None:
-            bundle.close()
-            self.state.sockets = None
+        self._closing.set()
+        try:
+            self._stop_health_monitor()
+            self._stop_control_loop()
+            bundle = self.state.sockets
+            if bundle is not None:
+                self._send_goodbye_packets(bundle)
+            self._shutdown_audio()
+            bundle = self.state.sockets
+            if bundle is not None:
+                bundle.close()
+                self.state.sockets = None
+        finally:
+            self._closing.clear()
 
     # ---- control loop ----------------------------------------------------
     def _start_control_loop(self) -> None:
@@ -220,6 +276,28 @@ class ConversationSession:
             self._control_thread.join(timeout=1.0)
             self._control_thread = None
 
+    def _start_health_monitor(self) -> None:
+        if self.state.heartbeat_thread and self.state.heartbeat_thread.is_alive():
+            return
+        event = threading.Event()
+        event.set()
+        self.state.heartbeat_running = event
+        thread = threading.Thread(
+            target=self._heartbeat_loop, name="NeuroTalkHeartbeat", daemon=True
+        )
+        self.state.heartbeat_thread = thread
+        thread.start()
+
+    def _stop_health_monitor(self) -> None:
+        event = self.state.heartbeat_running
+        if event is not None:
+            event.clear()
+        thread = self.state.heartbeat_thread
+        if thread is not None:
+            thread.join(timeout=1.0)
+        self.state.heartbeat_thread = None
+        self.state.heartbeat_running = None
+
     def _control_loop(self) -> None:
         sockets = self.state.sockets
         if sockets is None:
@@ -233,7 +311,12 @@ class ConversationSession:
             except BlockingIOError:
                 continue
             except OSError as exc:
-                logger.debug("control_loop recv OSError: %s", exc, exc_info=exc)
+                if not self._closing.is_set():
+                    self._record_fault(
+                        SessionFaultSource.CONTROL_RECEIVE,
+                        "Control socket receive failed",
+                        exc,
+                    )
                 break
             if not data:
                 logger.debug("control_loop received empty datagram")
@@ -245,6 +328,9 @@ class ConversationSession:
                 logger.debug(
                     "control_loop failed to classify payload len=%s", len(data)
                 )
+                continue
+            self._record_peer_activity()
+            if msg_type is ControlMessageType.HEARTBEAT:
                 continue
             logger.debug("control_loop received %s", msg_type)
             self._auto_respond_control(msg_type)
@@ -273,6 +359,7 @@ class ConversationSession:
         Block until the next control event arrives (or timeout occurs).
         """
 
+        self.raise_if_faulted()
         if not self._control_running.is_set():
             logger.debug("next_control_event called while control loop inactive")
         try:
@@ -281,7 +368,16 @@ class ConversationSession:
             return event
         except queue.Empty:
             logger.debug("next_control_event timeout after %s", timeout)
+            self.raise_if_faulted()
             raise
+
+    def get_fault(self) -> SessionFault | None:
+        return self.state.fault
+
+    def raise_if_faulted(self) -> None:
+        fault = self.state.fault
+        if fault is not None:
+            raise SessionFaultError(fault)
 
     def send_turn_pass(self, payload: TurnPassPayload) -> None:
         logger.debug("send_turn_pass attempting send: %s", payload)
@@ -626,13 +722,25 @@ class ConversationSession:
         logger.debug("initializing audio workers")
 
         output_worker = AudioOutputWorker(
-            audio_cfg, recorder=remote_recorder, stream_factory=factory
+            audio_cfg,
+            recorder=remote_recorder,
+            stream_factory=factory,
+            fatal_error_handler=lambda exc: self._record_fault(
+                SessionFaultSource.AUDIO_OUTPUT,
+                "Audio output worker failed",
+                exc,
+            ),
         )
         input_worker = AudioInputWorker(
             audio_cfg,
             self._handle_outbound_packet,
             recorder=local_recorder,
             stream_factory=factory,
+            fatal_error_handler=lambda exc: self._record_fault(
+                SessionFaultSource.AUDIO_INPUT,
+                "Audio input worker failed",
+                exc,
+            ),
         )
 
         self.state.output_worker = output_worker
@@ -667,7 +775,11 @@ class ConversationSession:
         try:
             sockets.outbound.sendto(payload, (remote_ip, port_in))
         except OSError as exc:
-            logger.debug("Failed to send audio packet: %s", exc, exc_info=exc)
+            self._record_fault(
+                SessionFaultSource.AUDIO_SEND,
+                "Failed to send audio packet",
+                exc,
+            )
 
     def _receive_audio_loop(self) -> None:
         sockets = self.state.sockets
@@ -683,7 +795,13 @@ class ConversationSession:
                 data = sockets.inbound.recv(65536)
             except (BlockingIOError, TimeoutError):
                 continue
-            except OSError:
+            except OSError as exc:
+                if not self._closing.is_set():
+                    self._record_fault(
+                        SessionFaultSource.AUDIO_RECEIVE,
+                        "Audio receive loop failed",
+                        exc,
+                    )
                 break
             if not data:
                 logger.debug("_receive_audio_loop got empty packet")
@@ -691,6 +809,7 @@ class ConversationSession:
             if data == THANKS:
                 logger.debug("_receive_audio_loop received THANKS sentinel")
                 break
+            self._record_peer_activity()
             packet = self._decode_packet(data)
             if packet is None:
                 logger.debug(
@@ -814,3 +933,66 @@ class ConversationSession:
                 bundle.outbound.sendto(THANKS, (remote_ip, port_in))
             except OSError:
                 break
+
+    def _record_peer_activity(self) -> None:
+        self.state.last_peer_activity_monotonic = time.monotonic()
+
+    def _heartbeat_loop(self) -> None:
+        event = self.state.heartbeat_running
+        sockets = self.state.sockets
+        if event is None or sockets is None:
+            return
+        last_send = 0.0
+        remote_ip, _, _, port_comm = sockets.remote
+        while event.is_set():
+            if self._closing.is_set() or self.state.fault is not None:
+                break
+            now = time.monotonic()
+            if now - last_send >= HEARTBEAT_INTERVAL_S:
+                try:
+                    sockets.control.sendto(HEARTBEAT, (remote_ip, port_comm))
+                except OSError as exc:
+                    logger.debug("Heartbeat send failed: %s", exc, exc_info=exc)
+                last_send = now
+            timeout = self.config.network.peer_timeout_s
+            last_peer = self.state.last_peer_activity_monotonic
+            if (
+                timeout is not None
+                and last_peer is not None
+                and (now - last_peer) > timeout
+            ):
+                self._record_fault(
+                    SessionFaultSource.PEER_TIMEOUT,
+                    f"No peer activity observed for {timeout:.1f}s",
+                )
+                break
+            time.sleep(0.1)
+
+    def _record_fault(
+        self,
+        source: SessionFaultSource,
+        message: str,
+        cause: Exception | None = None,
+    ) -> None:
+        if self._closing.is_set():
+            return
+        with self._fault_lock:
+            if self.state.fault is not None:
+                return
+            fault = SessionFault(
+                source=source,
+                message=message,
+                timestamp=time.time(),
+                cause=cause,
+            )
+            self.state.fault = fault
+        if cause is not None:
+            logger.error(
+                "[session fault] %s: %s (%s)",
+                source.value,
+                message,
+                cause,
+                exc_info=(type(cause), cause, cause.__traceback__),
+            )
+        else:
+            logger.error("[session fault] %s: %s", source.value, message)

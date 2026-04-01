@@ -26,6 +26,7 @@ def test_loads_default_when_no_file(
     assert cfg.role == "role"
     assert cfg.audio.channels == 1
     assert cfg.audio.playback_gain == 1.0
+    assert cfg.audio.input_device is None
 
 
 def test_loads_from_config_and_overrides(tmp_path: Path) -> None:
@@ -36,7 +37,7 @@ def test_loads_from_config_and_overrides(tmp_path: Path) -> None:
                 "participant_id": "base",
                 "role": "base",
                 "network": {"local_ports": [1, 2, 3]},
-                "audio": {"channels": 1, "playback_gain": 0.8},
+                "audio": {"channels": 1, "playback_gain": 0.8, "input_device": 5},
                 "recording": {"directory": str(tmp_path / "data")},
             }
         )
@@ -54,6 +55,10 @@ def test_loads_from_config_and_overrides(tmp_path: Path) -> None:
         "stun:example.org",
         "--playback-gain",
         "1.5",
+        "--input-device",
+        "7",
+        "--output-device",
+        "USB Audio Device",
         "--recording-dir",
         str(tmp_path / "rec"),
     ]
@@ -62,6 +67,8 @@ def test_loads_from_config_and_overrides(tmp_path: Path) -> None:
     assert cfg.role == "base"
     assert cfg.audio.channels == 2
     assert cfg.audio.playback_gain == 1.5
+    assert cfg.audio.input_device == 7
+    assert cfg.audio.output_device == "USB Audio Device"
     assert cfg.network.local_ports == (10, 11, 12)
     assert cfg.network.stun_servers == ("stun:example.org",)
     assert cfg.recording.directory == tmp_path / "rec"
