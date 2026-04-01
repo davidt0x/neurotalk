@@ -64,6 +64,14 @@ def add_config_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--buffer-chunks", type=int, help="Client-side buffer chunks.")
     parser.add_argument("--format-tag", type=int, help="PyAudio format tag (int).")
     parser.add_argument(
+        "--input-device",
+        help="Input device selector (PortAudio index or exact device name).",
+    )
+    parser.add_argument(
+        "--output-device",
+        help="Output device selector (PortAudio index or exact device name).",
+    )
+    parser.add_argument(
         "--mock-devices",
         action="store_true",
         help="Use mock audio backend (no real I/O).",
@@ -144,9 +152,13 @@ def load_config_from_args(args: argparse.Namespace) -> SessionConfig:
         "buffer_chunks",
         "format_tag",
         "playback_gain",
+        "input_device",
+        "output_device",
     ):
         value = getattr(args, field, None)
         if value is not None:
+            if field in {"input_device", "output_device"}:
+                value = _normalize_device_selector(value)
             setattr(cfg.audio, field, value)
     if getattr(args, "mock_devices", False):
         cfg.audio.mock_devices = True
@@ -208,3 +220,17 @@ def _parse_metadata(text: str) -> dict[str, str]:
         k, v = pair.split("=", 1)
         meta[k.strip()] = v.strip()
     return meta
+
+
+def _normalize_device_selector(value: object) -> int | str | None:
+    if value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    text = str(value).strip()
+    if not text:
+        return None
+    with_int = text.split("#", 1)[0].strip()
+    if with_int.isdigit():
+        return int(with_int)
+    return text

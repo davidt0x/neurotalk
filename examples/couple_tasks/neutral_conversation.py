@@ -11,6 +11,7 @@ from psychopy import core, event, logging
 if __package__:
     from .log import TaskLogger
     from .utils import (
+        cli_spinner,
         configure_runtime_logging,
         create_window,
         decode_pid,
@@ -26,6 +27,7 @@ else:  # pragma: no cover - script-mode support
     sys.path.append(str(Path(__file__).resolve().parents[1]))
     from couple_tasks.log import TaskLogger  # type: ignore[import-not-found]
     from couple_tasks.utils import (  # type: ignore[import-not-found]
+        cli_spinner,
         configure_runtime_logging,
         create_window,
         decode_pid,
@@ -196,7 +198,11 @@ def main(
             cfg, recording_enabled=False, recording_label=RECORDING_LABEL
         )
         turn_manager = TurnManager(conv_session)
-        conv_session.connect()
+        with cli_spinner(
+            "Waiting for partner handshake...",
+            success_message="Handshake complete.",
+        ):
+            conv_session.connect()
         conv_session.enable_transmit(False)
         conv_session.enable_receive(False)
 

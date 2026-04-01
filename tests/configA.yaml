@@ -15,6 +15,7 @@ audio:
   format_tag: 8 # PyAudio format tag (int16 default)
   mock_devices: false # Use mock audio backend if true (no real I/O)
   playback_gain: 1.0 # Playback multiplier (updated by soundcheck)
+  input_device: 5 # Linux input device index
 
 recording:
   directory: "data" # Base directory for recordings

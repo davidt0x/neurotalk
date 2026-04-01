@@ -19,6 +19,20 @@ import yaml
 PortRange = tuple[int, int]
 
 
+def _normalize_device_selector(value: object) -> int | str | None:
+    if value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    text = str(value).strip()
+    if not text:
+        return None
+    stripped = text.split("#", 1)[0].strip()
+    if stripped.isdigit():
+        return int(stripped)
+    return text
+
+
 @dataclass(slots=True)
 class NetworkConfig:
     """
@@ -101,6 +115,12 @@ class AudioConfig:
     mock_devices:
         When True, bypass real sound hardware and use the mock audio backend
         which produces synthetic silence for testing.
+    input_device:
+        Optional sounddevice/PortAudio input device selector. May be an integer
+        device index or a backend-specific device name string.
+    output_device:
+        Optional sounddevice/PortAudio output device selector. May be an integer
+        device index or a backend-specific device name string.
     """
 
     sample_rate_hz: int = 16_000
@@ -110,6 +130,8 @@ class AudioConfig:
     format_tag: int = 8  # matches pyaudio.paInt16
     mock_devices: bool = False
     playback_gain: float = 1.0
+    input_device: int | str | None = None
+    output_device: int | str | None = None
 
     def __post_init__(self) -> None:
         chunk = self.chunk_frames
@@ -137,6 +159,9 @@ class AudioConfig:
                 stripped = raw_gain.split("#", 1)[0].strip()
                 with contextlib.suppress(ValueError):
                     d["playback_gain"] = float(stripped)
+        for device_field in ("input_device", "output_device"):
+            if device_field in d:
+                d[device_field] = _normalize_device_selector(d[device_field])
         return cls(**d)
 
     def to_dict(self) -> dict[str, Any]:

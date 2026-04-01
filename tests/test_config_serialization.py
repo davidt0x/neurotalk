@@ -27,6 +27,8 @@ def test_from_dict_explicit(tmp_path: Path) -> None:
             "buffer_chunks": 2,
             "format_tag": 8,
             "mock_devices": True,
+            "input_device": "5",
+            "output_device": "USB Audio Device",
         },
         "recording": {
             "directory": str(tmp_path / "data"),
@@ -56,6 +58,8 @@ def test_from_dict_explicit(tmp_path: Path) -> None:
         buffer_chunks=2,
         format_tag=8,
         mock_devices=True,
+        input_device=5,
+        output_device="USB Audio Device",
     )
     assert cfg.recording.directory == tmp_path / "data"
     assert cfg.recording.local_track == Path("mic.wav")

@@ -101,6 +101,7 @@ class SoundDeviceStreamFactory:
             channels=config.channels,
             dtype="int16",
             blocksize=config.chunk_frames,
+            device=config.input_device,
             callback=callback,
         )
         return SoundDeviceInputStream(stream)
@@ -113,6 +114,7 @@ class SoundDeviceStreamFactory:
             channels=config.channels,
             dtype="int16",
             blocksize=config.chunk_frames,
+            device=config.output_device,
             callback=callback,
         )
         return SoundDeviceOutputStream(stream)

@@ -17,6 +17,7 @@ from psychopy import core  # type: ignore[import-not-found]
 
 if __package__:
     from .utils import (
+        cli_spinner,
         close_window_and_restore_display,
         configure_runtime_logging,
         create_window,
@@ -26,6 +27,7 @@ else:  # pragma: no cover - script-mode support
 
     sys.path.append(str(Path(__file__).resolve().parents[1]))
     from couple_tasks.utils import (  # type: ignore[import-not-found]
+        cli_spinner,
         close_window_and_restore_display,
         configure_runtime_logging,
         create_window,
@@ -63,7 +65,11 @@ def main(
         conv_session = ConversationSession(
             session_cfg, recording_enabled=False, recording_label="soundcheck"
         )
-        conv_session.connect()
+        with cli_spinner(
+            "Waiting for partner handshake...",
+            success_message="Handshake complete.",
+        ):
+            conv_session.connect()
 
         if ui in {"auto", "psychopy"}:
             win = create_window(
