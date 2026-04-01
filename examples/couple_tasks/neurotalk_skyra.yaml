@@ -14,10 +14,13 @@ audio:
   buffer_chunks: 4 # Client-side chunks to buffer before playback
   format_tag: 8 # PyAudio format tag (int16 default)
   mock_devices: false # Use mock audio backend if true (no real I/O)
-  playback_gain: 1.0 # Playback multiplier (updated by soundcheck)
+  playback_gain: 3.700 # Playback multiplier (updated by soundcheck)
 
 recording:
   directory: "data" # Base directory for recordings
   local_track: null # Override local mic filename (or leave null for auto)
   remote_track: null # Override remote playback filename (or leave null for auto)
   mix_track: null # Override mixed filename (or leave null for auto)
+
+metadata:
+  playback_volume_percent: 370
