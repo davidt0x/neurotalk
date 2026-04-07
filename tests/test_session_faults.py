@@ -11,7 +11,7 @@ import pytest
 
 from neurotalk.audio import AudioPacket
 from neurotalk.config import NetworkConfig, SessionConfig
-from neurotalk.control import HEARTBEAT
+from neurotalk.control import HEARTBEAT, THANKS
 from neurotalk.network import SocketBundle
 from neurotalk.session import (
     ConversationSession,
@@ -251,3 +251,25 @@ def test_receive_audio_loop_records_fault_on_socket_error() -> None:
         assert fault.source is SessionFaultSource.AUDIO_RECEIVE
     finally:
         close_sockets(bundle.outbound, bundle.control, *remote_sockets)
+
+
+def test_receive_audio_loop_records_peer_closed_on_thanks() -> None:
+    bundle, remote_sockets = make_bundle()
+    session = ConversationSession(SessionConfig())
+    session.state.sockets = bundle
+    session.state.receiver_running = threading.Event()
+    session.state.receiver_running.set()
+
+    receiver = threading.Thread(target=session._receive_audio_loop, daemon=True)
+    receiver.start()
+
+    try:
+        remote_sockets[1].sendto(THANKS, bundle.inbound.getsockname())
+        wait_until(lambda: session.get_fault() is not None)
+        fault = session.get_fault()
+        assert fault is not None
+        assert fault.source is SessionFaultSource.PEER_CLOSED
+    finally:
+        session.state.receiver_running.clear()
+        receiver.join(timeout=1.0)
+        close_sockets(bundle.inbound, bundle.outbound, bundle.control, *remote_sockets)

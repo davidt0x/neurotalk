@@ -62,6 +62,7 @@ class SessionFaultSource(str, Enum):
     AUDIO_SEND = "audio_send"
     AUDIO_RECEIVE = "audio_receive"
     CONTROL_RECEIVE = "control_receive"
+    PEER_CLOSED = "peer_closed"
     PEER_TIMEOUT = "peer_timeout"
 
 
@@ -809,6 +810,11 @@ class ConversationSession:
                 continue
             if data == THANKS:
                 logger.debug("_receive_audio_loop received THANKS sentinel")
+                if not self._closing.is_set():
+                    self._record_fault(
+                        SessionFaultSource.PEER_CLOSED,
+                        "Peer closed session",
+                    )
                 break
             self._record_peer_activity()
             packet = self._decode_packet(data)
