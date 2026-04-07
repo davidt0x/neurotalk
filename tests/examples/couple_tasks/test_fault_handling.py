@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import logging as py_logging
 import sys
 import types
 from pathlib import Path
@@ -119,6 +120,14 @@ def import_couple_task_module(
     return importlib.import_module(module_name)
 
 
+def import_couple_task_utils(
+    monkeypatch: pytest.MonkeyPatch, *, quit_calls: list[str]
+):
+    install_fake_psychopy(monkeypatch, quit_calls=quit_calls)
+    sys.modules.pop("examples.couple_tasks.utils", None)
+    return importlib.import_module("examples.couple_tasks.utils")
+
+
 class DummyAssignment:
     condition = "persuade"
     first_topic = "air"
@@ -137,6 +146,7 @@ class DummyLogger:
     def __init__(self, **kwargs) -> None:
         self.kwargs = kwargs
         self.saved = False
+        self.filename = Path("data/test_task_log")
 
     def save_and_close(self) -> None:
         self.saved = True
@@ -170,7 +180,11 @@ def assert_conversation_task_fault_handling(
     def fake_finalize(conv_session, recording_dir, logger, mixdown, win) -> None:
         finalize_calls.append((conv_session, recording_dir, logger, mixdown, win))
 
-    monkeypatch.setattr(module, "configure_runtime_logging", lambda *_args: None)
+    monkeypatch.setattr(
+        module,
+        "configure_runtime_logging",
+        lambda *_args, **_kwargs: None,
+    )
     monkeypatch.setattr(module, "ConversationSession", FailingSession)
     monkeypatch.setattr(module, "TaskLogger", DummyLogger)
     monkeypatch.setattr(module, "load_assignment_row", lambda *_args: DummyAssignment())
@@ -262,7 +276,11 @@ def test_soundcheck_logs_and_exits_on_session_fault(
             )
         )
 
-    monkeypatch.setattr(module, "configure_runtime_logging", lambda *_args: None)
+    monkeypatch.setattr(
+        module,
+        "configure_runtime_logging",
+        lambda *_args, **_kwargs: None,
+    )
     monkeypatch.setattr(module, "ConversationSession", DummySession)
     monkeypatch.setattr(module, "create_window", lambda **_kwargs: DummyWindow())
     monkeypatch.setattr(module, "run_conversation_soundcheck", raise_fault)
@@ -296,3 +314,40 @@ def test_soundcheck_logs_and_exits_on_session_fault(
     assert "NeuroTalk session fault detected" in errors[0]
     assert events == ["close", "close_window"]
     assert quit_calls == ["quit"]
+
+
+def test_configure_runtime_logging_writes_debug_logs_to_runtime_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    utils = import_couple_task_utils(monkeypatch, quit_calls=[])
+    runtime_log_path = utils.build_runtime_log_path(
+        directory=tmp_path,
+        stem="runtime_test",
+    )
+    root = py_logging.getLogger()
+    old_handlers = list(root.handlers)
+    old_level = root.level
+
+    try:
+        for handler in old_handlers:
+            root.removeHandler(handler)
+        utils.configure_runtime_logging("INFO", log_path=runtime_log_path)
+        logger = py_logging.getLogger("tests.runtime")
+        logger.debug("debug line")
+        logger.info("info line")
+        for handler in root.handlers:
+            handler.flush()
+        contents = runtime_log_path.read_text(encoding="utf-8")
+    finally:
+        for handler in list(root.handlers):
+            root.removeHandler(handler)
+            if isinstance(handler, py_logging.FileHandler):
+                handler.close()
+        for handler in old_handlers:
+            root.addHandler(handler)
+        root.setLevel(old_level)
+        utils._RUNTIME_LOGGING_STATE.file_handler = None
+        utils._RUNTIME_LOGGING_STATE.file_path = None
+
+    assert "debug line" in contents
+    assert "info line" in contents

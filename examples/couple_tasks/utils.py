@@ -6,8 +6,11 @@ import logging as py_logging
 import os
 import re
 import subprocess
+import sys
+import threading
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 from psychopy import core, logging, monitors, visual  # type: ignore[import-not-found]
@@ -15,6 +18,16 @@ from rich.console import Console
 
 DISPLAY_SWITCH_SETTLE_S = 3.0
 _console = Console(stderr=True)
+
+
+@dataclass
+class _RuntimeLoggingState:
+    file_handler: py_logging.FileHandler | None = None
+    file_path: Path | None = None
+    exception_hooks_installed: bool = False
+
+
+_RUNTIME_LOGGING_STATE = _RuntimeLoggingState()
 
 
 @contextmanager
@@ -28,17 +41,108 @@ def cli_spinner(message: str, *, success_message: str | None = None):
         _console.print(success_message)
 
 
-def configure_runtime_logging(log_level: str) -> int:
-    """Configure Python and PsychoPy logging to the same severity."""
+def build_runtime_log_path(*, directory: Path, stem: str) -> Path:
+    """Create a timestamped runtime-log path under the given directory."""
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory / f"{stem}_{timestamp}_runtime.log"
+
+
+def runtime_log_path_from_base(base_path: Path) -> Path:
+    """Derive a sibling ``*_runtime.log`` path from an existing task log stem."""
+
+    return base_path.parent / f"{base_path.name}_runtime.log"
+
+
+def _install_exception_logging() -> None:
+    """Log uncaught main-thread and worker-thread exceptions via stdlib logging."""
+
+    if _RUNTIME_LOGGING_STATE.exception_hooks_installed:
+        return
+
+    previous_excepthook = sys.excepthook
+    previous_threading_hook = threading.excepthook
+
+    def excepthook(exc_type, exc, tb) -> None:
+        if not issubclass(exc_type, KeyboardInterrupt):
+            py_logging.getLogger("uncaught").critical(
+                "Uncaught exception",
+                exc_info=(exc_type, exc, tb),
+            )
+        previous_excepthook(exc_type, exc, tb)
+
+    def thread_excepthook(args: threading.ExceptHookArgs) -> None:
+        if args.exc_type is not KeyboardInterrupt:
+            thread_name = args.thread.name if args.thread is not None else "unknown"
+            py_logging.getLogger(f"thread.{thread_name}").critical(
+                "Uncaught thread exception",
+                exc_info=(args.exc_type, args.exc_value, args.exc_traceback),
+            )
+        previous_threading_hook(args)
+
+    sys.excepthook = excepthook
+    threading.excepthook = thread_excepthook
+    _RUNTIME_LOGGING_STATE.exception_hooks_installed = True
+
+
+def configure_runtime_logging(
+    log_level: str, *, log_path: Path | None = None
+) -> int:
+    """Configure console logging plus an optional debug-level runtime log file."""
 
     level_name = (log_level or "INFO").upper()
     level_value = getattr(py_logging, level_name, py_logging.INFO)
     root = py_logging.getLogger()
-    if not root.handlers:
-        py_logging.basicConfig(level=level_value, format="%(message)s")
-    else:
-        root.setLevel(level_value)
-        for handler in root.handlers:
+    root.setLevel(py_logging.DEBUG)
+
+    console_handlers = [
+        handler
+        for handler in root.handlers
+        if isinstance(handler, py_logging.StreamHandler)
+        and not isinstance(handler, py_logging.FileHandler)
+    ]
+    if not console_handlers:
+        console_handler = py_logging.StreamHandler()
+        console_handler.setFormatter(py_logging.Formatter("%(message)s"))
+        root.addHandler(console_handler)
+        console_handlers = [console_handler]
+
+    for handler in console_handlers:
+        handler.setLevel(level_value)
+
+    if log_path is not None:
+        resolved_path = log_path.resolve()
+        resolved_path.parent.mkdir(parents=True, exist_ok=True)
+        if (
+            _RUNTIME_LOGGING_STATE.file_handler is not None
+            and resolved_path != _RUNTIME_LOGGING_STATE.file_path
+        ):
+            root.removeHandler(_RUNTIME_LOGGING_STATE.file_handler)
+            _RUNTIME_LOGGING_STATE.file_handler.close()
+            _RUNTIME_LOGGING_STATE.file_handler = None
+            _RUNTIME_LOGGING_STATE.file_path = None
+        if _RUNTIME_LOGGING_STATE.file_handler is None:
+            file_handler = py_logging.FileHandler(resolved_path, encoding="utf-8")
+            file_handler.setFormatter(
+                py_logging.Formatter(
+                    "%(asctime)s %(levelname)s [%(name)s] %(message)s",
+                    "%Y-%m-%d %H:%M:%S",
+                )
+            )
+            file_handler.setLevel(py_logging.DEBUG)
+            root.addHandler(file_handler)
+            _RUNTIME_LOGGING_STATE.file_handler = file_handler
+            _RUNTIME_LOGGING_STATE.file_path = resolved_path
+        else:
+            _RUNTIME_LOGGING_STATE.file_handler.setLevel(py_logging.DEBUG)
+        _install_exception_logging()
+
+    for handler in root.handlers:
+        if (
+            isinstance(handler, py_logging.FileHandler)
+            and handler is not _RUNTIME_LOGGING_STATE.file_handler
+        ):
             handler.setLevel(level_value)
     logging.console.setLevel(level_value)
     return level_value

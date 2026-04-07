@@ -367,7 +367,8 @@ class ConversationSession:
             logger.debug("next_control_event -> %s", event[0])
             return event
         except queue.Empty:
-            logger.debug("next_control_event timeout after %s", timeout)
+            if timeout not in (0, 0.0):
+                logger.debug("next_control_event timeout after %s", timeout)
             self.raise_if_faulted()
             raise
 

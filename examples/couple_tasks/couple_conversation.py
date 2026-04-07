@@ -27,6 +27,7 @@ if __package__:
         finalize_and_quit,
         load_assignment_row,
         pick_first_speaker,
+        runtime_log_path_from_base,
         slug,
         text_factory,
     )
@@ -44,6 +45,7 @@ else:  # pragma: no cover - script-mode support
         finalize_and_quit,
         load_assignment_row,
         pick_first_speaker,
+        runtime_log_path_from_base,
         slug,
         text_factory,
     )
@@ -181,8 +183,6 @@ def main(
     if display < 0:
         msg = "--display must be >= 0"
         raise ValueError(msg)
-    configure_runtime_logging(log_level)
-
     conv_session: ConversationSession | None = None
     logger: TaskLogger | None = None
     win = None
@@ -223,6 +223,10 @@ def main(
             dyad=dyad,
             participant_role=role,
             conflict_text=conflict_text,
+        )
+        configure_runtime_logging(
+            log_level,
+            log_path=runtime_log_path_from_base(logger.filename),
         )
 
         conv_session = ConversationSession(

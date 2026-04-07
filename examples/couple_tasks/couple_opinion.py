@@ -15,16 +15,18 @@ from pathlib import Path
 
 import numpy as np
 import sounddevice as sd
-from psychopy import core, event, logging
+from psychopy import core, event
 
 if __package__:
     from .log import TaskLogger
     from .utils import (
         close_window_and_restore_display,
+        configure_runtime_logging,
         create_window,
         decode_pid,
         load_assignment_row,
         pick_first_speaker,
+        runtime_log_path_from_base,
         slug,
         text_factory,
     )
@@ -35,10 +37,12 @@ else:  # pragma: no cover - script-mode support
     from couple_tasks.log import TaskLogger  # type: ignore[import-not-found]
     from couple_tasks.utils import (  # type: ignore[import-not-found]
         close_window_and_restore_display,
+        configure_runtime_logging,
         create_window,
         decode_pid,
         load_assignment_row,
         pick_first_speaker,
+        runtime_log_path_from_base,
         slug,
         text_factory,
     )
@@ -75,6 +79,7 @@ def main(
     csv_path: str,
     *,
     display: int = DISPLAY,
+    log_level: str = "WARNING",
 ):
     if session not in (1, 2):
         msg = "Session must be 1 or 2"
@@ -107,7 +112,10 @@ def main(
         participant_role=role,
         conflict_text=conflict_text,
     )
-    logging.console.setLevel(logging.WARNING)
+    configure_runtime_logging(
+        log_level,
+        log_path=runtime_log_path_from_base(logger.filename),
+    )
 
     win = create_window(scanner=SCANNER, size=WIN_SIZE, fullscr=FULLSCR, screen=display)
     make_text = text_factory(win, letter_height=LETTER_H, wrap_width=WRAP_W)
@@ -313,6 +321,12 @@ if __name__ == "__main__":
         default=DISPLAY,
         help="Display index to use for PsychoPy window (0=primary monitor).",
     )
+    ap.add_argument(
+        "--log-level",
+        type=str,
+        default="WARNING",
+        help="Console log level (DEBUG, INFO, WARNING, etc.)",
+    )
     args = ap.parse_args()
     main(
         pid=args.pid,
@@ -320,4 +334,5 @@ if __name__ == "__main__":
         conflict=args.conflict,
         csv_path=args.csv,
         display=args.display,
+        log_level=args.log_level,
     )

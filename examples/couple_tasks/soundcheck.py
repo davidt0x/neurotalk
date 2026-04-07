@@ -17,6 +17,7 @@ from psychopy import core  # type: ignore[import-not-found]
 
 if __package__:
     from .utils import (
+        build_runtime_log_path,
         cli_spinner,
         close_window_and_restore_display,
         configure_runtime_logging,
@@ -27,6 +28,7 @@ else:  # pragma: no cover - script-mode support
 
     sys.path.append(str(Path(__file__).resolve().parents[1]))
     from couple_tasks.utils import (  # type: ignore[import-not-found]
+        build_runtime_log_path,
         cli_spinner,
         close_window_and_restore_display,
         configure_runtime_logging,
@@ -57,7 +59,14 @@ def main(
     if display < 0:
         msg = "--display must be >= 0"
         raise ValueError(msg)
-    configure_runtime_logging(log_level)
+    recording_dir = session_cfg.recording.directory
+    configure_runtime_logging(
+        log_level,
+        log_path=build_runtime_log_path(
+            directory=recording_dir,
+            stem=f"{session_cfg.participant_id}_soundcheck",
+        ),
+    )
 
     conv_session: ConversationSession | None = None
     win = None

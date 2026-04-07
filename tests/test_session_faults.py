@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import contextlib
+import logging
+import queue
 import socket
 import threading
 import time
@@ -96,6 +98,36 @@ def test_next_control_event_raises_fault_instead_of_queue_empty() -> None:
 
     with pytest.raises(SessionFaultError):
         session.next_control_event(timeout=0.0)
+
+
+def test_next_control_event_zero_timeout_does_not_log_queue_empty(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    session = ConversationSession(SessionConfig())
+    session._control_running.set()
+
+    with (
+        caplog.at_level(logging.DEBUG, logger="neurotalk.session"),
+        pytest.raises(queue.Empty),
+    ):
+        session.next_control_event(timeout=0.0)
+
+    assert "next_control_event timeout after 0.0" not in caplog.text
+
+
+def test_next_control_event_nonzero_timeout_logs_queue_empty(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    session = ConversationSession(SessionConfig())
+    session._control_running.set()
+
+    with (
+        caplog.at_level(logging.DEBUG, logger="neurotalk.session"),
+        pytest.raises(queue.Empty),
+    ):
+        session.next_control_event(timeout=0.1)
+
+    assert "next_control_event timeout after 0.1" in caplog.text
 
 
 def test_record_fault_keeps_first_fault() -> None:
