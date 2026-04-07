@@ -449,6 +449,12 @@ class ConversationSession:
         """Begin a labeled segment for the requested recording targets."""
 
         targets = self._resolve_segment_targets(target)
+        logger.debug(
+            "start_segment label=%s targets=%s metadata_keys=%s",
+            label,
+            sorted(targets),
+            None if metadata is None else sorted(metadata),
+        )
         if "local" in targets and self.state.local_recorder:
             self.state.local_recorder.start_segment(label, metadata=metadata)
         if "remote" in targets and self.state.remote_recorder:
@@ -458,6 +464,7 @@ class ConversationSession:
         """End the current segment for the requested recording targets."""
 
         targets = self._resolve_segment_targets(target)
+        logger.debug("stop_segment targets=%s", sorted(targets))
         if "local" in targets and self.state.local_recorder:
             self.state.local_recorder.stop_segment()
         if "remote" in targets and self.state.remote_recorder:
@@ -537,11 +544,21 @@ class ConversationSession:
         )
 
     def enable_transmit(self, enabled: bool) -> None:
+        logger.debug(
+            "enable_transmit %s -> %s",
+            self.state.transmit_enabled,
+            enabled,
+        )
         self.state.transmit_enabled = enabled
         if self.state.input_worker:
             self.state.input_worker.enable_transmit(enabled)
 
     def enable_receive(self, enabled: bool) -> None:
+        logger.debug(
+            "enable_receive %s -> %s",
+            self.state.receive_enabled,
+            enabled,
+        )
         self.state.receive_enabled = enabled
         if self.state.output_worker:
             self.state.output_worker.enable_playback(enabled)
