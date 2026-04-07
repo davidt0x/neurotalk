@@ -219,6 +219,61 @@ def test_heartbeat_timeout_sets_fault() -> None:
         close_sockets(*remote_sockets)
 
 
+def test_heartbeat_warning_logs_without_fault(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    bundle, remote_sockets = make_bundle()
+    session = ConversationSession(
+        SessionConfig(
+            network=NetworkConfig(peer_timeout_s=None, peer_warning_s=0.2)
+        )
+    )
+    session.state.sockets = bundle
+    session._record_peer_activity()
+
+    try:
+        with caplog.at_level(logging.WARNING, logger="neurotalk.session"):
+            session._start_health_monitor()
+            wait_until(
+                lambda: "continuing without fail-fast" in caplog.text,
+                timeout=1.0,
+            )
+        assert session.get_fault() is None
+    finally:
+        session.close()
+        close_sockets(*remote_sockets)
+
+
+def test_peer_warning_logs_recovery_once_activity_returns(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    bundle, remote_sockets = make_bundle()
+    session = ConversationSession(
+        SessionConfig(
+            network=NetworkConfig(peer_timeout_s=None, peer_warning_s=0.2)
+        )
+    )
+    session.state.sockets = bundle
+    session._record_peer_activity()
+
+    try:
+        with caplog.at_level(logging.INFO, logger="neurotalk.session"):
+            session._start_health_monitor()
+            wait_until(
+                lambda: "continuing without fail-fast" in caplog.text,
+                timeout=1.0,
+            )
+            session._record_peer_activity()
+            wait_until(
+                lambda: "Peer activity restored after" in caplog.text,
+                timeout=1.0,
+            )
+        assert session.get_fault() is None
+    finally:
+        session.close()
+        close_sockets(*remote_sockets)
+
+
 def test_handle_outbound_packet_records_fault_on_send_error() -> None:
     bundle, remote_sockets = make_bundle()
     session = ConversationSession(SessionConfig())

@@ -142,6 +142,7 @@ class SessionState:
     owns_stream_factory: bool = False
     fault: SessionFault | None = None
     last_peer_activity_monotonic: float | None = None
+    peer_warning_logged: bool = False
     heartbeat_thread: threading.Thread | None = None
     heartbeat_running: threading.Event | None = None
 
@@ -213,6 +214,7 @@ class ConversationSession:
         with self._fault_lock:
             self.state.fault = None
         self.state.last_peer_activity_monotonic = None
+        self.state.peer_warning_logged = False
 
         net_cfg: NetworkConfig = self.config.network
         logger.info(
@@ -959,6 +961,13 @@ class ConversationSession:
                 break
 
     def _record_peer_activity(self) -> None:
+        previous = self.state.last_peer_activity_monotonic
+        if self.state.peer_warning_logged and previous is not None:
+            silence_s = max(0.0, time.monotonic() - previous)
+            logger.info(
+                "Peer activity restored after %.1fs of silence", silence_s
+            )
+            self.state.peer_warning_logged = False
         self.state.last_peer_activity_monotonic = time.monotonic()
 
     def _heartbeat_loop(self) -> None:
@@ -979,7 +988,19 @@ class ConversationSession:
                     logger.debug("Heartbeat send failed: %s", exc, exc_info=exc)
                 last_send = now
             timeout = self.config.network.peer_timeout_s
+            warning_timeout = self.config.network.peer_warning_s
             last_peer = self.state.last_peer_activity_monotonic
+            if (
+                warning_timeout is not None
+                and last_peer is not None
+                and not self.state.peer_warning_logged
+                and (now - last_peer) > warning_timeout
+            ):
+                logger.warning(
+                    "No peer activity observed for %.1fs; continuing without fail-fast",
+                    now - last_peer,
+                )
+                self.state.peer_warning_logged = True
             if (
                 timeout is not None
                 and last_peer is not None

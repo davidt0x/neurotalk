@@ -27,6 +27,7 @@ def test_loads_default_when_no_file(
     assert cfg.audio.channels == 1
     assert cfg.audio.playback_gain == 1.0
     assert cfg.audio.input_device is None
+    assert cfg.network.peer_warning_s == 3.0
 
 
 def test_loads_from_config_and_overrides(tmp_path: Path) -> None:

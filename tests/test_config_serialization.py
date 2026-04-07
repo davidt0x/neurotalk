@@ -50,6 +50,7 @@ def test_from_dict_explicit(tmp_path: Path) -> None:
         nat_role=0,
         punch_timeout_s=10.0,
         peer_timeout_s=5.0,
+        peer_warning_s=3.0,
     )
     assert cfg.audio == AudioConfig(
         sample_rate_hz=22_050,
@@ -80,6 +81,7 @@ def test_defaults_and_yaml_roundtrip(
     assert loaded.role == "role"
     assert loaded.audio.sample_rate_hz == 16_000
     assert loaded.audio.playback_gain == 1.0
+    assert loaded.network.peer_warning_s == 3.0
 
     roundtrip = SessionConfig.from_dict(loaded.to_dict())
     assert roundtrip == loaded

@@ -56,6 +56,11 @@ def add_config_arguments(parser: argparse.ArgumentParser) -> None:
         type=float,
         help="Seconds to wait for NAT punch to complete.",
     )
+    parser.add_argument(
+        "--peer-warning",
+        type=float,
+        help="Seconds of peer inactivity before a warning is logged.",
+    )
 
     # Audio overrides
     parser.add_argument("--sample-rate-hz", type=int, help="PCM sample rate.")
@@ -143,6 +148,8 @@ def load_config_from_args(args: argparse.Namespace) -> SessionConfig:
         cfg.network.nat_role = _coerce_nat_role(args.nat_role)
     if getattr(args, "punch_timeout", None) is not None:
         cfg.network.punch_timeout_s = float(args.punch_timeout)
+    if getattr(args, "peer_warning", None) is not None:
+        cfg.network.peer_warning_s = float(args.peer_warning)
 
     # Audio
     for field in (

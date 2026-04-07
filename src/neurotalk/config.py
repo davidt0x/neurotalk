@@ -56,6 +56,9 @@ class NetworkConfig:
     peer_timeout_s:
         Number of seconds of peer inactivity before the session faults. Set to
         ``None`` to disable liveness faulting.
+    peer_warning_s:
+        Number of seconds of peer inactivity before the session logs a warning.
+        Set to ``None`` to disable warning-only liveness logging.
     """
 
     local_ports: tuple[int, int, int] = (30002, 30001, 30003)
@@ -64,6 +67,7 @@ class NetworkConfig:
     nat_role: int | str = "auto"
     punch_timeout_s: float = 30.0
     peer_timeout_s: float | None = 5.0
+    peer_warning_s: float | None = 3.0
 
     def __post_init__(self) -> None:
         role = self.nat_role
@@ -75,6 +79,9 @@ class NetworkConfig:
             raise ValueError(msg)
         if self.peer_timeout_s is not None and self.peer_timeout_s <= 0:
             msg = "peer_timeout_s must be positive or None"
+            raise ValueError(msg)
+        if self.peer_warning_s is not None and self.peer_warning_s <= 0:
+            msg = "peer_warning_s must be positive or None"
             raise ValueError(msg)
 
     @classmethod
