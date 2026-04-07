@@ -120,9 +120,7 @@ def import_couple_task_module(
     return importlib.import_module(module_name)
 
 
-def import_couple_task_utils(
-    monkeypatch: pytest.MonkeyPatch, *, quit_calls: list[str]
-):
+def import_couple_task_utils(monkeypatch: pytest.MonkeyPatch, *, quit_calls: list[str]):
     install_fake_psychopy(monkeypatch, quit_calls=quit_calls)
     sys.modules.pop("examples.couple_tasks.utils", None)
     return importlib.import_module("examples.couple_tasks.utils")

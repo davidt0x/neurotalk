@@ -86,9 +86,7 @@ def _install_exception_logging() -> None:
     _RUNTIME_LOGGING_STATE.exception_hooks_installed = True
 
 
-def configure_runtime_logging(
-    log_level: str, *, log_path: Path | None = None
-) -> int:
+def configure_runtime_logging(log_level: str, *, log_path: Path | None = None) -> int:
     """Configure console logging plus an optional debug-level runtime log file."""
 
     level_name = (log_level or "INFO").upper()
