@@ -66,7 +66,7 @@ class NetworkConfig:
     stun_servers: Sequence[str] = ()
     nat_role: int | str = "auto"
     punch_timeout_s: float = 30.0
-    peer_timeout_s: float | None = 5.0
+    peer_timeout_s: float | None = 60.0
     peer_warning_s: float | None = 3.0
 
     def __post_init__(self) -> None:
