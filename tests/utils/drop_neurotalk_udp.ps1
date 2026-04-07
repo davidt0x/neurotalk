@@ -5,9 +5,7 @@ param(
 
     [int]$DurationSeconds = 8,
 
-    [int[]]$Ports = @(30001, 30002, 30003),
-
-    [string]$RuleGroup = "NeuroTalkTest"
+    [int[]]$Ports = @(30001, 30002, 30003)
 )
 
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -24,8 +22,19 @@ if ($Ports.Count -eq 0) {
     throw "Provide at least one UDP port."
 }
 
-$portList = ($Ports | Sort-Object -Unique) -join ","
-$displayPrefix = "NeuroTalk UDP Drop $PID"
+$portValues = @(
+    $Ports |
+        Sort-Object -Unique |
+        ForEach-Object {
+            if ($_ -lt 1 -or $_ -gt 65535) {
+                throw "Port values must be between 1 and 65535."
+            }
+            [string]$_
+        }
+)
+$portList = $portValues -join ","
+$ruleToken = [guid]::NewGuid().ToString("N")
+$displayPrefix = "NeuroTalk UDP Drop $ruleToken"
 $createdRules = @()
 
 function Add-DropRule {
@@ -33,28 +42,27 @@ function Add-DropRule {
         [string]$DisplayName,
         [string]$Direction,
         [string]$PortArgumentName,
-        [string]$PortList
+        [string[]]$PortValues
     )
 
     $params = @{
         DisplayName   = $DisplayName
-        DisplayGroup  = $RuleGroup
         Direction     = $Direction
         Action        = "Block"
         Protocol      = "UDP"
         RemoteAddress = $PeerIp
     }
-    $params[$PortArgumentName] = $PortList
+    $params[$PortArgumentName] = $PortValues
 
-    New-NetFirewallRule @params | Out-Null
+    New-NetFirewallRule @params -ErrorAction Stop | Out-Null
     $script:createdRules += $DisplayName
 }
 
 try {
     Write-Host "Blocking NeuroTalk UDP traffic to $PeerIp on ports $portList for $DurationSeconds second(s)."
 
-    Add-DropRule -DisplayName "$displayPrefix Outbound" -Direction "Outbound" -PortArgumentName "RemotePort" -PortList $portList
-    Add-DropRule -DisplayName "$displayPrefix Inbound" -Direction "Inbound" -PortArgumentName "LocalPort" -PortList $portList
+    Add-DropRule -DisplayName "$displayPrefix Outbound" -Direction "Outbound" -PortArgumentName "RemotePort" -PortValues $portValues
+    Add-DropRule -DisplayName "$displayPrefix Inbound" -Direction "Inbound" -PortArgumentName "LocalPort" -PortValues $portValues
 
     Start-Sleep -Seconds $DurationSeconds
 }
