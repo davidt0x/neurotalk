@@ -10,13 +10,26 @@ test workflows, but they are not part of the automated pytest suite.
 
 ### `drop_neurotalk_udp.ps1`
 
-Temporarily blocks NeuroTalk UDP traffic to and from one peer IP on the default
-ports `30001,30002,30003`.
+Temporarily blocks NeuroTalk UDP traffic to and from one peer IP.
+
+The default port behavior matches the Windows `configB.yaml` side of the home
+test setup:
+- inbound local ports: `31001,31002,31003`
+- outbound remote ports: `30001,30002,30003`
 
 Example:
 
 ```powershell
-.\drop_neurotalk_udp.ps1 -PeerIp 192.168.1.151 -DurationSeconds 8
+.\drop_neurotalk_udp.ps1 -PeerIp 192.168.1.155 -DurationSeconds 8
+```
+
+Override the defaults explicitly:
+
+```powershell
+.\drop_neurotalk_udp.ps1 -PeerIp 192.168.1.155 `
+  -LocalPorts 31001,31002,31003 `
+  -RemotePorts 30001,30002,30003 `
+  -DurationSeconds 8
 ```
 
 Control-only outage:
@@ -44,10 +57,25 @@ Both PowerShell scripts require an elevated PowerShell session.
 Temporarily blocks NeuroTalk UDP traffic to and from one peer IP using
 `iptables`.
 
+The default port behavior matches the Linux `configA.yaml` side of the home
+test setup:
+- inbound local ports: `30001,30002,30003`
+- outbound remote ports: `31001,31002,31003`
+
 Example:
 
 ```bash
 sudo ./drop_neurotalk_udp.sh --peer-ip 192.168.1.151 --duration 8
+```
+
+Override the defaults explicitly:
+
+```bash
+sudo ./drop_neurotalk_udp.sh \
+  --peer-ip 192.168.1.151 \
+  --local-ports 30001,30002,30003 \
+  --remote-ports 31001,31002,31003 \
+  --duration 8
 ```
 
 ### `flap_interface.sh`
@@ -75,6 +103,9 @@ sudo ./netem_neurotalk.sh --iface wlan0 --duration 20 --loss 20% --delay-ms 200 
 
 - `drop_neurotalk_udp.*` is the cleanest way to test reconnect logic because it
   isolates the NeuroTalk UDP ports instead of taking the whole machine offline.
+- For asymmetric configs, use separate local and remote port lists. Inbound
+  rules must target this machine's local ports, while outbound rules must target
+  the peer's local ports.
 - Adapter flap scripts are harsher and closer to a NIC reset or driver issue.
 - If you run multiple experiments back-to-back, verify firewall and qdisc rules
   were cleaned up before starting the next run.
