@@ -54,6 +54,8 @@ logger = logging.getLogger(__name__)
 
 ControlHandler = Callable[[ControlMessageType, object | None], None]
 HEARTBEAT_INTERVAL_S = 1.0
+AUDIO_KEEPALIVE_INTERVAL_S = 1.0
+AUDIO_KEEPALIVE_COUNTER = -1
 
 
 class SessionFaultSource(str, Enum):
@@ -875,6 +877,8 @@ class ConversationSession:
                 )
                 continue
             self._record_inbound_audio_activity()
+            if self._is_audio_keepalive_packet(packet):
+                continue
             output = self.state.output_worker
             if output is not None:
                 output.enqueue(packet)
@@ -895,6 +899,18 @@ class ConversationSession:
         timestamp = struct.unpack("<d", payload[-8:])[0]
         pcm = payload[:-12]
         return AudioPacket(pcm=pcm, counter=counter, timestamp=timestamp)
+
+    def _make_audio_keepalive_packet(self) -> AudioPacket:
+        audio_cfg = self.config.audio
+        silent_pcm = b"\x00" * (audio_cfg.chunk_frames * audio_cfg.channels * 2)
+        return AudioPacket(
+            pcm=silent_pcm,
+            counter=AUDIO_KEEPALIVE_COUNTER,
+            timestamp=time.time(),
+        )
+
+    def _is_audio_keepalive_packet(self, packet: AudioPacket) -> bool:
+        return packet.counter == AUDIO_KEEPALIVE_COUNTER
 
     def _shutdown_audio(self) -> None:
         event = self.state.receiver_running
@@ -1119,6 +1135,7 @@ class ConversationSession:
         if event is None or sockets is None:
             return
         last_send = 0.0
+        last_audio_keepalive_send = 0.0
         remote_ip, _, _, port_comm = sockets.remote
         while event.is_set():
             if self._closing.is_set() or self.state.fault is not None:
@@ -1130,6 +1147,12 @@ class ConversationSession:
                 except OSError as exc:
                     logger.debug("Heartbeat send failed: %s", exc, exc_info=exc)
                 last_send = now
+            if (
+                not self.state.transmit_enabled
+                and now - last_audio_keepalive_send >= AUDIO_KEEPALIVE_INTERVAL_S
+            ):
+                self._handle_outbound_packet(self._make_audio_keepalive_packet())
+                last_audio_keepalive_send = now
             timeout = self.config.network.peer_timeout_s
             warning_timeout = self.config.network.peer_warning_s
             last_peer = self.state.last_peer_activity_monotonic

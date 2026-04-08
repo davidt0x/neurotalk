@@ -6,6 +6,7 @@ import queue
 import socket
 import threading
 import time
+from typing import Any, cast
 
 import pytest
 
@@ -14,6 +15,7 @@ from neurotalk.config import NetworkConfig, SessionConfig
 from neurotalk.control import HEARTBEAT, THANKS
 from neurotalk.network import SocketBundle
 from neurotalk.session import (
+    AUDIO_KEEPALIVE_COUNTER,
     ConversationSession,
     SessionFault,
     SessionFaultError,
@@ -391,6 +393,59 @@ def test_receive_audio_loop_records_peer_closed_on_thanks() -> None:
         fault = session.get_fault()
         assert fault is not None
         assert fault.source is SessionFaultSource.PEER_CLOSED
+    finally:
+        session.state.receiver_running.clear()
+        receiver.join(timeout=1.0)
+        close_sockets(bundle.inbound, bundle.outbound, bundle.control, *remote_sockets)
+
+
+def test_heartbeat_loop_sends_audio_keepalive_when_transmit_disabled() -> None:
+    bundle, remote_sockets = make_bundle()
+    session = ConversationSession(SessionConfig())
+    session.state.sockets = bundle
+    session.state.transmit_enabled = False
+    remote_sockets[0].settimeout(1.5)
+
+    try:
+        session._start_health_monitor()
+        payload = remote_sockets[0].recv(65536)
+        packet = session._decode_packet(payload)
+        assert packet is not None
+        assert packet.counter == AUDIO_KEEPALIVE_COUNTER
+        assert packet.pcm == b"\x00" * (
+            session.config.audio.chunk_frames * session.config.audio.channels * 2
+        )
+    finally:
+        session.close()
+        close_sockets(*remote_sockets)
+
+
+def test_receive_audio_loop_drops_keepalive_packets_from_output() -> None:
+    class DummyOutputWorker:
+        def __init__(self) -> None:
+            self.packets: list[AudioPacket] = []
+
+        def enqueue(self, packet: AudioPacket) -> None:
+            self.packets.append(packet)
+
+    bundle, remote_sockets = make_bundle()
+    session = ConversationSession(SessionConfig())
+    session.state.sockets = bundle
+    output_worker = DummyOutputWorker()
+    session.state.output_worker = cast(Any, output_worker)
+    session.state.receiver_running = threading.Event()
+    session.state.receiver_running.set()
+
+    receiver = threading.Thread(target=session._receive_audio_loop, daemon=True)
+    receiver.start()
+
+    try:
+        keepalive = session._make_audio_keepalive_packet()
+        remote_sockets[1].sendto(
+            session._encode_packet(keepalive), bundle.inbound.getsockname()
+        )
+        wait_until(lambda: session.state.audio_packets_received == 1)
+        assert output_worker.packets == []
     finally:
         session.state.receiver_running.clear()
         receiver.join(timeout=1.0)
