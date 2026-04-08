@@ -142,7 +142,19 @@ class SessionState:
     owns_stream_factory: bool = False
     fault: SessionFault | None = None
     last_peer_activity_monotonic: float | None = None
+    last_control_activity_monotonic: float | None = None
+    last_audio_send_monotonic: float | None = None
+    last_audio_receive_monotonic: float | None = None
     peer_warning_logged: bool = False
+    inbound_audio_warning_logged: bool = False
+    outbound_audio_warning_logged: bool = False
+    control_packets_received: int = 0
+    audio_packets_sent: int = 0
+    audio_packets_received: int = 0
+    last_transport_stats_log_monotonic: float | None = None
+    last_logged_control_packets_received: int = 0
+    last_logged_audio_packets_sent: int = 0
+    last_logged_audio_packets_received: int = 0
     heartbeat_thread: threading.Thread | None = None
     heartbeat_running: threading.Event | None = None
 
@@ -214,7 +226,19 @@ class ConversationSession:
         with self._fault_lock:
             self.state.fault = None
         self.state.last_peer_activity_monotonic = None
+        self.state.last_control_activity_monotonic = None
+        self.state.last_audio_send_monotonic = None
+        self.state.last_audio_receive_monotonic = None
         self.state.peer_warning_logged = False
+        self.state.inbound_audio_warning_logged = False
+        self.state.outbound_audio_warning_logged = False
+        self.state.control_packets_received = 0
+        self.state.audio_packets_sent = 0
+        self.state.audio_packets_received = 0
+        self.state.last_transport_stats_log_monotonic = None
+        self.state.last_logged_control_packets_received = 0
+        self.state.last_logged_audio_packets_sent = 0
+        self.state.last_logged_audio_packets_received = 0
 
         net_cfg: NetworkConfig = self.config.network
         logger.info(
@@ -332,7 +356,7 @@ class ConversationSession:
                     "control_loop failed to classify payload len=%s", len(data)
                 )
                 continue
-            self._record_peer_activity()
+            self._record_control_activity()
             if msg_type is ControlMessageType.HEARTBEAT:
                 continue
             logger.debug("control_loop received %s", msg_type)
@@ -552,6 +576,9 @@ class ConversationSession:
             enabled,
         )
         self.state.transmit_enabled = enabled
+        self.state.outbound_audio_warning_logged = False
+        if enabled:
+            self.state.last_audio_send_monotonic = time.monotonic()
         if self.state.input_worker:
             self.state.input_worker.enable_transmit(enabled)
 
@@ -562,6 +589,9 @@ class ConversationSession:
             enabled,
         )
         self.state.receive_enabled = enabled
+        self.state.inbound_audio_warning_logged = False
+        if enabled:
+            self.state.last_audio_receive_monotonic = time.monotonic()
         if self.state.output_worker:
             self.state.output_worker.enable_playback(enabled)
 
@@ -801,6 +831,8 @@ class ConversationSession:
                 "Failed to send audio packet",
                 exc,
             )
+        else:
+            self._record_outbound_audio_activity()
 
     def _receive_audio_loop(self) -> None:
         sockets = self.state.sockets
@@ -842,6 +874,7 @@ class ConversationSession:
                     "_receive_audio_loop dropped undecodable payload len=%s", len(data)
                 )
                 continue
+            self._record_inbound_audio_activity()
             output = self.state.output_worker
             if output is not None:
                 output.enqueue(packet)
@@ -970,6 +1003,116 @@ class ConversationSession:
             self.state.peer_warning_logged = False
         self.state.last_peer_activity_monotonic = time.monotonic()
 
+    def _record_control_activity(self) -> None:
+        self.state.control_packets_received += 1
+        self.state.last_control_activity_monotonic = time.monotonic()
+        self._record_peer_activity()
+
+    def _record_outbound_audio_activity(self) -> None:
+        now = time.monotonic()
+        previous = self.state.last_audio_send_monotonic
+        if self.state.outbound_audio_warning_logged and previous is not None:
+            logger.info(
+                "Outbound audio restored after %.1fs of silence",
+                max(0.0, now - previous),
+            )
+            self.state.outbound_audio_warning_logged = False
+        self.state.audio_packets_sent += 1
+        self.state.last_audio_send_monotonic = now
+
+    def _record_inbound_audio_activity(self) -> None:
+        now = time.monotonic()
+        previous = self.state.last_audio_receive_monotonic
+        if self.state.inbound_audio_warning_logged and previous is not None:
+            logger.info(
+                "Inbound audio restored after %.1fs of silence",
+                max(0.0, now - previous),
+            )
+            self.state.inbound_audio_warning_logged = False
+        self.state.audio_packets_received += 1
+        self.state.last_audio_receive_monotonic = now
+        self._record_peer_activity()
+
+    def _format_activity_age(self, value: float | None, now: float) -> str:
+        if value is None:
+            return "n/a"
+        return f"{max(0.0, now - value):.1f}s"
+
+    def _maybe_warn_audio_path_silence(self, now: float) -> None:
+        warning_timeout = self.config.network.peer_warning_s
+        if warning_timeout is None:
+            return
+
+        if (
+            self.state.transmit_enabled
+            and not self.state.outbound_audio_warning_logged
+            and self.state.last_audio_send_monotonic is not None
+            and (now - self.state.last_audio_send_monotonic) > warning_timeout
+        ):
+            logger.warning(
+                "No outbound audio packets sent for %.1fs while transmit is enabled "
+                "(last control activity %s ago)",
+                now - self.state.last_audio_send_monotonic,
+                self._format_activity_age(
+                    self.state.last_control_activity_monotonic, now
+                ),
+            )
+            self.state.outbound_audio_warning_logged = True
+
+        if (
+            self.state.receive_enabled
+            and not self.state.inbound_audio_warning_logged
+            and self.state.last_audio_receive_monotonic is not None
+            and (now - self.state.last_audio_receive_monotonic) > warning_timeout
+        ):
+            logger.warning(
+                "No inbound audio packets received for %.1fs while receive is enabled "
+                "(last control activity %s ago)",
+                now - self.state.last_audio_receive_monotonic,
+                self._format_activity_age(
+                    self.state.last_control_activity_monotonic, now
+                ),
+            )
+            self.state.inbound_audio_warning_logged = True
+
+    def _maybe_log_transport_stats(self, now: float) -> None:
+        if not logger.isEnabledFor(logging.DEBUG):
+            return
+        previous = self.state.last_transport_stats_log_monotonic
+        if previous is not None and (now - previous) < HEARTBEAT_INTERVAL_S:
+            return
+        interval = HEARTBEAT_INTERVAL_S if previous is None else max(now - previous, 1e-6)
+        control_delta = (
+            self.state.control_packets_received
+            - self.state.last_logged_control_packets_received
+        )
+        audio_tx_delta = (
+            self.state.audio_packets_sent - self.state.last_logged_audio_packets_sent
+        )
+        audio_rx_delta = (
+            self.state.audio_packets_received
+            - self.state.last_logged_audio_packets_received
+        )
+        logger.debug(
+            "transport stats dt=%.1fs control_rx=%d audio_tx=%d audio_rx=%d "
+            "transmit=%s receive=%s control_age=%s audio_tx_age=%s audio_rx_age=%s",
+            interval,
+            control_delta,
+            audio_tx_delta,
+            audio_rx_delta,
+            self.state.transmit_enabled,
+            self.state.receive_enabled,
+            self._format_activity_age(self.state.last_control_activity_monotonic, now),
+            self._format_activity_age(self.state.last_audio_send_monotonic, now),
+            self._format_activity_age(self.state.last_audio_receive_monotonic, now),
+        )
+        self.state.last_transport_stats_log_monotonic = now
+        self.state.last_logged_control_packets_received = (
+            self.state.control_packets_received
+        )
+        self.state.last_logged_audio_packets_sent = self.state.audio_packets_sent
+        self.state.last_logged_audio_packets_received = self.state.audio_packets_received
+
     def _heartbeat_loop(self) -> None:
         event = self.state.heartbeat_running
         sockets = self.state.sockets
@@ -1011,6 +1154,8 @@ class ConversationSession:
                     f"No peer activity observed for {timeout:.1f}s",
                 )
                 break
+            self._maybe_warn_audio_path_silence(now)
+            self._maybe_log_transport_stats(now)
             time.sleep(0.1)
 
     def _record_fault(

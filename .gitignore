@@ -1,5 +1,7 @@
 data/
 
+data_machine_A/
+
 examples/data/
 
 examples/story_tasks/*.log

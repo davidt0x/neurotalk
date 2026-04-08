@@ -274,6 +274,73 @@ def test_peer_warning_logs_recovery_once_activity_returns(
         close_sockets(*remote_sockets)
 
 
+def test_control_activity_updates_control_timestamp_and_counter() -> None:
+    session = ConversationSession(SessionConfig())
+
+    before = time.monotonic()
+    session._record_control_activity()
+
+    assert session.state.control_packets_received == 1
+    assert session.state.last_control_activity_monotonic is not None
+    assert session.state.last_control_activity_monotonic >= before
+    assert session.state.last_peer_activity_monotonic is not None
+
+
+def test_audio_silence_warning_logs_when_receive_enabled(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    session = ConversationSession(
+        SessionConfig(network=NetworkConfig(peer_timeout_s=None, peer_warning_s=0.2))
+    )
+    now = time.monotonic()
+    session.state.receive_enabled = True
+    session.state.last_audio_receive_monotonic = now - 0.3
+    session.state.last_control_activity_monotonic = now - 0.05
+
+    with caplog.at_level(logging.WARNING, logger="neurotalk.session"):
+        session._maybe_warn_audio_path_silence(now)
+
+    assert "No inbound audio packets received" in caplog.text
+    assert "last control activity 0.1s ago" in caplog.text
+    assert session.state.inbound_audio_warning_logged is True
+
+
+def test_inbound_audio_restore_logs_after_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    session = ConversationSession(SessionConfig())
+    session.state.inbound_audio_warning_logged = True
+    session.state.last_audio_receive_monotonic = time.monotonic() - 0.4
+
+    with caplog.at_level(logging.INFO, logger="neurotalk.session"):
+        session._record_inbound_audio_activity()
+
+    assert "Inbound audio restored after" in caplog.text
+    assert session.state.audio_packets_received == 1
+    assert session.state.inbound_audio_warning_logged is False
+
+
+def test_transport_stats_debug_logs_packet_deltas(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    session = ConversationSession(SessionConfig())
+    now = time.monotonic()
+    session.state.control_packets_received = 5
+    session.state.audio_packets_sent = 7
+    session.state.audio_packets_received = 3
+    session.state.last_control_activity_monotonic = now - 0.2
+    session.state.last_audio_send_monotonic = now - 0.4
+    session.state.last_audio_receive_monotonic = now - 0.6
+
+    with caplog.at_level(logging.DEBUG, logger="neurotalk.session"):
+        session._maybe_log_transport_stats(now)
+
+    assert "transport stats" in caplog.text
+    assert "control_rx=5" in caplog.text
+    assert "audio_tx=7" in caplog.text
+    assert "audio_rx=3" in caplog.text
+
+
 def test_handle_outbound_packet_records_fault_on_send_error() -> None:
     bundle, remote_sockets = make_bundle()
     session = ConversationSession(SessionConfig())
