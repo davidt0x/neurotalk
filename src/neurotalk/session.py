@@ -1013,9 +1013,7 @@ class ConversationSession:
         previous = self.state.last_peer_activity_monotonic
         if self.state.peer_warning_logged and previous is not None:
             silence_s = max(0.0, time.monotonic() - previous)
-            logger.info(
-                "Peer activity restored after %.1fs of silence", silence_s
-            )
+            logger.info("Peer activity restored after %.1fs of silence", silence_s)
             self.state.peer_warning_logged = False
         self.state.last_peer_activity_monotonic = time.monotonic()
 
@@ -1097,7 +1095,9 @@ class ConversationSession:
         previous = self.state.last_transport_stats_log_monotonic
         if previous is not None and (now - previous) < HEARTBEAT_INTERVAL_S:
             return
-        interval = HEARTBEAT_INTERVAL_S if previous is None else max(now - previous, 1e-6)
+        interval = (
+            HEARTBEAT_INTERVAL_S if previous is None else max(now - previous, 1e-6)
+        )
         control_delta = (
             self.state.control_packets_received
             - self.state.last_logged_control_packets_received
@@ -1127,7 +1127,9 @@ class ConversationSession:
             self.state.control_packets_received
         )
         self.state.last_logged_audio_packets_sent = self.state.audio_packets_sent
-        self.state.last_logged_audio_packets_received = self.state.audio_packets_received
+        self.state.last_logged_audio_packets_received = (
+            self.state.audio_packets_received
+        )
 
     def _heartbeat_loop(self) -> None:
         event = self.state.heartbeat_running

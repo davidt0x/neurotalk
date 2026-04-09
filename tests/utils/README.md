@@ -14,6 +14,7 @@ Temporarily blocks NeuroTalk UDP traffic to and from one peer IP.
 
 The default port behavior matches the Windows `configB.yaml` side of the home
 test setup:
+
 - inbound local ports: `31001,31002,31003`
 - outbound remote ports: `30001,30002,30003`
 
@@ -57,8 +58,9 @@ Both PowerShell scripts require an elevated PowerShell session.
 Temporarily blocks NeuroTalk UDP traffic to and from one peer IP using
 `iptables`.
 
-The default port behavior matches the Linux `configA.yaml` side of the home
-test setup:
+The default port behavior matches the Linux `configA.yaml` side of the home test
+setup:
+
 - inbound local ports: `30001,30002,30003`
 - outbound remote ports: `31001,31002,31003`
 

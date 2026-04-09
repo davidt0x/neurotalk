@@ -226,9 +226,7 @@ def test_heartbeat_warning_logs_without_fault(
 ) -> None:
     bundle, remote_sockets = make_bundle()
     session = ConversationSession(
-        SessionConfig(
-            network=NetworkConfig(peer_timeout_s=None, peer_warning_s=0.2)
-        )
+        SessionConfig(network=NetworkConfig(peer_timeout_s=None, peer_warning_s=0.2))
     )
     session.state.sockets = bundle
     session._record_peer_activity()
@@ -251,9 +249,7 @@ def test_peer_warning_logs_recovery_once_activity_returns(
 ) -> None:
     bundle, remote_sockets = make_bundle()
     session = ConversationSession(
-        SessionConfig(
-            network=NetworkConfig(peer_timeout_s=None, peer_warning_s=0.2)
-        )
+        SessionConfig(network=NetworkConfig(peer_timeout_s=None, peer_warning_s=0.2))
     )
     session.state.sockets = bundle
     session._record_peer_activity()
