@@ -8,12 +8,13 @@ network:
   punch_timeout_s: 60 # Seconds to wait for NAT punch to complete
 
 audio:
-  sample_rate_hz: 16000 # PCM sample rate
+  sample_rate_hz: 48000 # PCM sample rate
   channels: 1 # Channel count (1=mono, 2=stereo)
   chunk_frames: 512 # Frames per audio packet (power of two)
   buffer_chunks: 4 # Client-side chunks to buffer before playback
   format_tag: 8 # PyAudio format tag (int16 default)
   mock_devices: false # Use mock audio backend if true (no real I/O)
+  input_device: "Microphone (NVIDIA Broadcast), WASAPI" # PortAudio input device selector
   playback_gain: 1.0 # Playback multiplier (updated by soundcheck)
 
 recording:
